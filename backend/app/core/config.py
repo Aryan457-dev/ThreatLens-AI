@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     API_PREFIX: str
 
+    DATABASE_URL: str
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True
