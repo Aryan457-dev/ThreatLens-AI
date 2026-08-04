@@ -1,4 +1,34 @@
+# Python cache
 __pycache__/
 *.py[cod]
+*.pyo
+
+# Virtual environment
 .venv/
+venv/
+
+# Environment variables
 .env
+.env.*
+
+# IDE settings
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Logs
+*.log
+
+# Test & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+
+# Python packaging
+*.egg-info/
