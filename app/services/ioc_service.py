@@ -10,8 +10,20 @@ class IOCService:
         return IOCRepository.create(db,data)
 
     @staticmethod
-    def get_all_iocs(db: Session):
-     return IOCRepository.get_all(db)
+    def get_all_iocs(
+      db: Session,
+      type: str | None = None,
+      source: str | None = None,
+      threat_level: str | None = None,
+      search: str | None = None, 
+    ):
+       return IOCRepository.get_all(
+          db=db,
+          type=type,
+          source=source,
+          threat_level=threat_level,
+          search=search,
+       )
 
     @staticmethod
     def get_ioc_by_id(db: Session, ioc_id: int):

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.schemas.ioc import IOCCreate, IOCResponse
 from app.services.ioc_service import IOCService
-
+from typing import Optional
 
 router = APIRouter(
     prefix="/iocs",
@@ -22,9 +22,19 @@ def create_ioc(
 
 @router.get("", response_model=list[IOCResponse])
 def get_all_iocs(
+    type: Optional[str] = None,
+    source: Optional[str] = None,
+    threat_level: Optional[str] = None,
+    search: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    return IOCService.get_all_iocs(db)
+    return IOCService.get_all_iocs(
+        db=db,
+        type=type,
+        source=source,
+        threat_level=threat_level,
+        search=search,
+    )
 
 @router.get("/{ioc_id}", response_model=IOCResponse)
 def get_ioc_by_id(
