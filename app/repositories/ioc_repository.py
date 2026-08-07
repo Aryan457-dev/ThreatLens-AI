@@ -28,6 +28,10 @@ class IOCRepository:
         source: str | None = None,
         threat_level: str | None = None,
         search: str | None = None,
+        limit: int = 10,
+        offset: int = 0,
+        sort_by: str = "created_at",
+        sort_order: str = "desc"
     ):
         query = db.query(IOC)
 
@@ -41,9 +45,17 @@ class IOCRepository:
             query = query.filter(IOC.threat_level == threat_level)
 
         if search:
-            query = query.filter(
-                IOC.value.ilike(f"%{search}%")
-            )
+            query = query.filter(IOC.value.contains(search))
+
+
+        column = getattr(IOC, sort_by)
+
+        if sort_order.lower() == "desc":
+            query = query.order_by(column.desc())
+        else:
+            query = query.order_by(column.asc())
+
+        query = query.offset(offset).limit(limit)
         return query.all()
 
     @staticmethod

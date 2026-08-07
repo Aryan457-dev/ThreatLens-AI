@@ -22,10 +22,14 @@ def create_ioc(
 
 @router.get("", response_model=list[IOCResponse])
 def get_all_iocs(
-    type: Optional[str] = None,
-    source: Optional[str] = None,
-    threat_level: Optional[str] = None,
-    search: Optional[str] = None,
+    type: str | None = None,
+    source: str | None = None,
+    threat_level: str | None = None,
+    search: str | None = None,
+    limit: int = 10,
+    offset: int = 0,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
     db: Session = Depends(get_db)
 ):
     return IOCService.get_all_iocs(
@@ -34,6 +38,10 @@ def get_all_iocs(
         source=source,
         threat_level=threat_level,
         search=search,
+        limit=limit,
+        offset=offset,
+        sort_by=sort_by,
+        sort_order=sort_order
     )
 
 @router.get("/{ioc_id}", response_model=IOCResponse)

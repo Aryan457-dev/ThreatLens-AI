@@ -16,6 +16,10 @@ class IOCService:
       source: str | None = None,
       threat_level: str | None = None,
       search: str | None = None, 
+      limit: int = 10,
+      offset: int = 0,
+      sort_by: str = "created_at",
+      sort_order: str = "desc"
     ):
        return IOCRepository.get_all(
           db=db,
@@ -23,6 +27,10 @@ class IOCService:
           source=source,
           threat_level=threat_level,
           search=search,
+          limit=limit,
+          offset=offset,
+          sort_by=sort_by,
+          sort_order=sort_order
        )
 
     @staticmethod
