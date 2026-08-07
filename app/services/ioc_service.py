@@ -2,11 +2,19 @@ from sqlalchemy.orm import Session
 
 from app.repositories.ioc_repository import IOCRepository
 from app.schemas.ioc import IOCCreate
-from fastapi import HTTPException
+from fastapi import HTTPException, status
+from app.validators.ioc_validator import IOCValidator
 
 class IOCService:
     @staticmethod
     def create_ioc(db: Session, data: IOCCreate):
+        if data.type.upper() == "IP":
+           if not IOCValidator.validate_ip(data.value):
+              raise HTTPException(
+                 status_code=status.HTTP_400_BAD_REQUEST,
+                 detail="Invalid IP address."
+              )
+
         return IOCRepository.create(db,data)
 
     @staticmethod
