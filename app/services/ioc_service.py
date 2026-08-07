@@ -14,6 +14,12 @@ class IOCService:
                  status_code=status.HTTP_400_BAD_REQUEST,
                  detail="Invalid IP address."
               )
+        elif data.type.upper() == "DOMAIN":
+           if not IOCValidator.validate_domain(data.value):
+              raise HTTPException(
+                 status_code=status.HTTP_400_BAD_REQUEST,
+                 detail="Invalid domain."
+              )
 
         return IOCRepository.create(db,data)
 
@@ -54,7 +60,19 @@ class IOCService:
 
     @staticmethod
     def update_ioc (db: Session, ioc_id: int, data: IOCCreate):
-       ioc = IOCRepository.update(db, ioc_id, data)
+       if data.type.upper() == "IP":
+          if not IOCValidator.validate_ip(data.value):
+             raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid IP address."
+             )
+       elif data.type.upper() == "DOMAIN":
+          if not IOCValidator.validate_domain(data.value):
+             raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid domain."
+             )
+       ioc = IOCRepository.update(db, ioc_id,data)
 
        if not ioc:
           raise HTTPException(
