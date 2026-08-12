@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     
     ABUSEIPDB_API_KEY: str
 
+    VIRUSTOTAL_API_KEY: str
+
     model_config = SettingsConfigDict(
         env_file=".env",
         case_sensitive=True
