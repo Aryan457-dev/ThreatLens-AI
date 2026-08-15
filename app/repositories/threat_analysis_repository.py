@@ -33,9 +33,14 @@ class ThreatAnalysisRepository:
             summary=summary,
         )
 
-        db.add(analysis)
-        db.commit()
-        db.refresh(analysis)
+        try:
+            db.add(analysis)
+            db.commit()
+            db.refresh(analysis)
+
+        except Exception:
+            db.rollback()
+            raise
 
         return analysis
 
@@ -47,7 +52,9 @@ class ThreatAnalysisRepository:
         return (
             db.query(ThreatAnalysis)
             .filter(ThreatAnalysis.ip == ip)
-            .order_by(ThreatAnalysis.created_at.desc())
+            .order_by(
+                ThreatAnalysis.created_at.desc()
+            )
             .all()
         )
 
@@ -59,7 +66,9 @@ class ThreatAnalysisRepository:
     ):
         return (
             db.query(ThreatAnalysis)
-            .order_by(ThreatAnalysis.created_at.desc())
+            .order_by(
+                ThreatAnalysis.created_at.desc()
+            )
             .offset(offset)
             .limit(limit)
             .all()

@@ -11,10 +11,15 @@ class Settings(BaseSettings):
     API_PREFIX: str
 
     DATABASE_URL: str
-    
+
     ABUSEIPDB_API_KEY: str
 
     VIRUSTOTAL_API_KEY: str
+
+    # Authentication
+    JWT_SECRET_KEY: str
+    JWT_ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     model_config = SettingsConfigDict(
         env_file=".env",
