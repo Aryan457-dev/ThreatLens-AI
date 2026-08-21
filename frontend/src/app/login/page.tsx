@@ -6,7 +6,7 @@ import { ShieldCheck, Eye, EyeOff, Loader2 } from "lucide-react";
 
 const API_BASE =
   process.env.NEXT_PUBLIC_API_URL ||
-  "http://127.0.0.1:8000/api/v1";
+  "http://localhost:8000/api/v1";
 
 export default function LoginPage() {
   const router = useRouter();

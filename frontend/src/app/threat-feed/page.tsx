@@ -10,10 +10,9 @@ import {
   Activity,
   Globe,
   RefreshCw,
-  AlertTriangle,
 } from "lucide-react";
 
-const API_URL = "http://127.0.0.1:8000";
+import { api } from "../../lib/api";
 
 type AbuseResult = {
   data?: {
@@ -42,32 +41,145 @@ type VirusTotalResult = {
 };
 
 type ThreatAnalysisResult = {
-  ip: string;
-  threat_score: number;
-  threat_level: string;
+  ip?: string;
+  threat_score?: number;
+  threat_level?: string;
 
   abuseipdb?: {
-    confidence_score: number;
-    total_reports: number;
+    confidence_score?: number;
+    total_reports?: number;
   };
 
   virustotal?: {
-    malicious: number;
-    suspicious: number;
-    harmless: number;
+    malicious?: number;
+    suspicious?: number;
+    harmless?: number;
   };
 
   analysis?: {
-    risk_factors: string[];
-    summary: string;
+    risk_factors?: string[];
+    summary?: string;
   };
 };
+
+function Metric({
+  label,
+  value,
+  danger,
+  warning,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+  warning?: boolean;
+}) {
+  let valueClass = "text-white";
+
+  if (danger) {
+    valueClass = "text-red-400";
+  } else if (warning) {
+    valueClass = "text-yellow-400";
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-800 p-4">
+      <p className="text-xs text-slate-500">
+        {label}
+      </p>
+
+      <p className={`mt-2 text-xl font-semibold ${valueClass}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function DetailRow({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-xs text-slate-500">
+        {label}
+      </span>
+
+      <span className="break-all text-right text-sm text-slate-200">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function SummaryItem({
+  icon,
+  title,
+  value,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  value: string;
+}) {
+  return (
+    <div className="rounded-lg border border-slate-800 p-4">
+      <div className="flex items-center gap-2 text-slate-500">
+        {icon}
+
+        <span className="text-xs">
+          {title}
+        </span>
+      </div>
+
+      <p className="mt-3 break-all text-sm font-semibold text-white">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function ThreatLevelBadge({
+  level,
+}: {
+  level?: string;
+}) {
+  switch (level?.toUpperCase()) {
+    case "CRITICAL":
+      return (
+        <span className="rounded-md border border-red-500/30 bg-red-500/10 px-2 py-1 text-xs font-medium text-red-400">
+          CRITICAL
+        </span>
+      );
+
+    case "HIGH":
+      return (
+        <span className="rounded-md border border-orange-500/30 bg-orange-500/10 px-2 py-1 text-xs font-medium text-orange-400">
+          HIGH
+        </span>
+      );
+
+    case "MEDIUM":
+      return (
+        <span className="rounded-md border border-yellow-500/30 bg-yellow-500/10 px-2 py-1 text-xs font-medium text-yellow-400">
+          MEDIUM
+        </span>
+      );
+
+    default:
+      return (
+        <span className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-xs font-medium text-emerald-400">
+          LOW
+        </span>
+      );
+  }
+}
 
 export default function ThreatFeedPage() {
   const [ip, setIp] = useState("");
 
   const [loading, setLoading] = useState(false);
-
   const [analyzing, setAnalyzing] = useState(false);
 
   const [abuseData, setAbuseData] =
@@ -80,72 +192,57 @@ export default function ThreatFeedPage() {
     useState<ThreatAnalysisResult | null>(null);
 
   const [error, setError] = useState("");
-
-  const [analysisError, setAnalysisError] =
-    useState("");
+  const [analysisError, setAnalysisError] = useState("");
 
   // ============================================================
   // CHECK THREAT FEEDS
   // ============================================================
 
   async function checkThreatFeeds() {
-    if (!ip.trim()) {
+    const cleanIP = ip.trim();
+
+    if (!cleanIP) {
       setError("Please enter an IP address.");
       return;
     }
 
     setLoading(true);
     setError("");
-    setAnalysisError("");
 
     setAbuseData(null);
     setVirusTotalData(null);
-    setAnalysisResult(null);
 
     try {
-      const encodedIP = encodeURIComponent(ip.trim());
+      /*
+       * api.get() automatically adds:
+       *
+       * Authorization: Bearer <JWT>
+       */
 
-      const [abuseResponse, virusTotalResponse] =
+      const [abuse, virusTotal] =
         await Promise.all([
-          fetch(
-            `${API_URL}/api/v1/threat-feed/check/${encodedIP}`
+          api.get(
+            `/api/v1/threat-feed/check/${encodeURIComponent(
+              cleanIP
+            )}`
           ),
 
-          fetch(
-            `${API_URL}/api/v1/threat-feed/virustotal/${encodedIP}`
+          api.get(
+            `/api/v1/threat-feed/virustotal/${encodeURIComponent(
+              cleanIP
+            )}`
           ),
         ]);
 
-      if (!abuseResponse.ok) {
-        const data =
-          await abuseResponse.json().catch(() => null);
-
-        throw new Error(
-          data?.detail ||
-            "AbuseIPDB request failed."
-        );
-      }
-
-      if (!virusTotalResponse.ok) {
-        const data =
-          await virusTotalResponse.json().catch(() => null);
-
-        throw new Error(
-          data?.detail ||
-            "VirusTotal request failed."
-        );
-      }
-
-      const abuse =
-        await abuseResponse.json();
-
-      const virusTotal =
-        await virusTotalResponse.json();
-
-      setAbuseData(abuse);
-      setVirusTotalData(virusTotal);
+      setAbuseData(abuse as AbuseResult);
+      setVirusTotalData(
+        virusTotal as VirusTotalResult
+      );
     } catch (err) {
-      console.error(err);
+      console.error(
+        "Threat feed error:",
+        err
+      );
 
       setError(
         err instanceof Error
@@ -162,7 +259,9 @@ export default function ThreatFeedPage() {
   // ============================================================
 
   async function analyzeIndicator() {
-    if (!ip.trim()) {
+    const cleanIP = ip.trim();
+
+    if (!cleanIP) {
       setAnalysisError(
         "Please enter an IP address first."
       );
@@ -174,25 +273,28 @@ export default function ThreatFeedPage() {
     setAnalysisResult(null);
 
     try {
-      const encodedIP = encodeURIComponent(ip.trim());
+      /*
+       * Backend:
+       *
+       * GET /api/v1/threat-feed/analyze/{ip}
+       *
+       * JWT is automatically attached by api.ts.
+       */
 
-      const response = await fetch(
-        `${API_URL}/api/v1/threat-feed/analyze/${encodedIP}`
+      const data = await api.get(
+        `/api/v1/threat-feed/analyze/${encodeURIComponent(
+          cleanIP
+        )}`
       );
 
-      const data =
-        await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(
-          data?.detail ||
-            `Threat analysis failed (${response.status}).`
-        );
-      }
-
-      setAnalysisResult(data);
+      setAnalysisResult(
+        data as ThreatAnalysisResult
+      );
     } catch (err) {
-      console.error("Threat analysis error:", err);
+      console.error(
+        "Threat analysis error:",
+        err
+      );
 
       setAnalysisError(
         err instanceof Error
@@ -217,29 +319,25 @@ export default function ThreatFeedPage() {
   }
 
   // ============================================================
-  // THREAT LEVEL STYLE
+  // RESET
   // ============================================================
 
-  function threatLevelClass(level?: string) {
-    switch (level?.toUpperCase()) {
-      case "CRITICAL":
-        return "border-red-500/30 bg-red-500/10 text-red-400";
-
-      case "HIGH":
-        return "border-orange-500/30 bg-orange-500/10 text-orange-400";
-
-      case "MEDIUM":
-        return "border-yellow-500/30 bg-yellow-500/10 text-yellow-400";
-
-      default:
-        return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
-    }
+  function resetResults() {
+    setIp("");
+    setAbuseData(null);
+    setVirusTotalData(null);
+    setAnalysisResult(null);
+    setError("");
+    setAnalysisError("");
   }
 
   const abuse = abuseData?.data;
 
   const hasFeedResults =
     Boolean(abuseData || virusTotalData);
+
+  const hasAnalysis =
+    Boolean(analysisResult);
 
   return (
     <div className="min-h-full bg-slate-950 px-6 pb-8 pt-8">
@@ -295,11 +393,11 @@ export default function ThreatFeedPage() {
 
         <div className="flex flex-col gap-3 md:flex-row">
 
-          <div className="flex flex-1 items-center gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3">
+          <div className="relative flex-1">
 
             <Globe
               size={17}
-              className="text-slate-500"
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600"
             />
 
             <input
@@ -310,105 +408,109 @@ export default function ThreatFeedPage() {
               }
               onKeyDown={handleKeyDown}
               placeholder="Enter IP address e.g. 8.8.8.8"
-              className="w-full bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-600"
+              className="w-full rounded-lg border border-slate-800 bg-slate-950 py-3 pl-10 pr-4 text-sm text-white outline-none transition focus:border-blue-500"
             />
 
           </div>
 
           <button
+            type="button"
             onClick={checkThreatFeeds}
-            disabled={loading || analyzing}
-            className="flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-6 py-3 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={loading}
+            className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
           >
 
             {loading ? (
               <>
                 <RefreshCw
-                  size={16}
+                  size={17}
                   className="animate-spin"
                 />
 
-                Checking...
+                Querying...
               </>
             ) : (
               <>
-                <Search size={16} />
+                <Search size={17} />
 
-                Check IP
+                Check Feeds
               </>
             )}
 
           </button>
 
+          {(hasFeedResults || hasAnalysis) && (
+            <button
+              type="button"
+              onClick={resetResults}
+              className="rounded-lg border border-slate-800 px-5 py-3 text-sm text-slate-400 transition hover:bg-slate-900 hover:text-white"
+            >
+              Reset
+            </button>
+          )}
+
         </div>
 
+        {/* Error */}
+
         {error && (
-          <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            {error}
+          <div className="mt-4 flex items-center gap-3 rounded-lg border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-400">
+
+            <ShieldAlert size={18} />
+
+            <span>{error}</span>
+
           </div>
         )}
 
       </div>
 
       {/* ======================================================
-          FEED STATUS
+          THREAT FEED RESULTS
       ====================================================== */}
 
-      <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
-
-        <FeedStatus
-          name="AbuseIPDB"
-          description="IP abuse reports and confidence scoring"
-          icon={<ShieldAlert size={19} />}
-          active={true}
-        />
-
-        <FeedStatus
-          name="VirusTotal"
-          description="Multi-engine IP reputation analysis"
-          icon={<ShieldCheck size={19} />}
-          active={true}
-        />
-
-      </div>
-
-      {/* ======================================================
-          RESULTS
-      ====================================================== */}
-
-      {hasFeedResults && (
-
+      {hasFeedResults && !loading && (
         <div className="mt-6">
 
-          <div className="mb-4">
+          <div className="mb-4 flex items-center justify-between">
 
-            <h2 className="text-sm font-semibold text-white">
-              Intelligence Results
-            </h2>
+            <div>
 
-            <p className="mt-1 text-xs text-slate-500">
-              Combined intelligence for{" "}
-              <span className="font-mono text-slate-400">
-                {ip}
-              </span>
-            </p>
+              <h2 className="text-sm font-semibold text-white">
+                Intelligence Results
+              </h2>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Results returned for {ip}
+              </p>
+
+            </div>
+
+            <span className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-xs text-emerald-400">
+              Connected
+            </span>
 
           </div>
 
-          <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
 
-            {/* =================================================
+            {/* ==================================================
                 ABUSEIPDB
-            ================================================= */}
+            =================================================== */}
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
 
-              <div className="mb-6 flex items-center justify-between">
+              <div className="mb-5 flex items-center justify-between">
 
                 <div className="flex items-center gap-3">
 
-                  <div className="rounded-lg bg-orange-500/10 p-2 text-orange-400">
-                    <ShieldAlert size={19} />
+                  <div className="rounded-lg bg-orange-500/10 p-2">
+
+                    <ShieldAlert
+                      size={19}
+                      className="text-orange-400"
+                    />
+
                   </div>
 
                   <div>
@@ -417,8 +519,8 @@ export default function ThreatFeedPage() {
                       AbuseIPDB
                     </h3>
 
-                    <p className="text-xs text-slate-500">
-                      Abuse reputation
+                    <p className="mt-1 text-xs text-slate-500">
+                      IP reputation and abuse reports
                     </p>
 
                   </div>
@@ -434,8 +536,18 @@ export default function ThreatFeedPage() {
               <div className="grid grid-cols-2 gap-4">
 
                 <Metric
-                  label="Confidence Score"
+                  label="Confidence"
                   value={`${abuse?.abuseConfidenceScore ?? 0}%`}
+                  danger={
+                    (abuse?.abuseConfidenceScore ?? 0) >=
+                    70
+                  }
+                  warning={
+                    (abuse?.abuseConfidenceScore ?? 0) >=
+                      30 &&
+                    (abuse?.abuseConfidenceScore ?? 0) <
+                      70
+                  }
                 />
 
                 <Metric
@@ -443,6 +555,9 @@ export default function ThreatFeedPage() {
                   value={String(
                     abuse?.totalReports ?? 0
                   )}
+                  danger={
+                    (abuse?.totalReports ?? 0) > 0
+                  }
                 />
 
                 <Metric
@@ -465,21 +580,34 @@ export default function ThreatFeedPage() {
               <div className="mt-4 space-y-3 border-t border-slate-800 pt-4">
 
                 <DetailRow
+                  label="IP Address"
+                  value={
+                    abuse?.ipAddress ||
+                    ip
+                  }
+                />
+
+                <DetailRow
                   label="ISP"
-                  value={abuse?.isp || "Unknown"}
+                  value={
+                    abuse?.isp ||
+                    "Unknown"
+                  }
                 />
 
                 <DetailRow
                   label="Domain"
                   value={
-                    abuse?.domain || "Unknown"
+                    abuse?.domain ||
+                    "Unknown"
                   }
                 />
 
                 <DetailRow
                   label="Usage Type"
                   value={
-                    abuse?.usageType || "Unknown"
+                    abuse?.usageType ||
+                    "Unknown"
                   }
                 />
 
@@ -495,18 +623,23 @@ export default function ThreatFeedPage() {
 
             </div>
 
-            {/* =================================================
+            {/* ==================================================
                 VIRUSTOTAL
-            ================================================= */}
+            =================================================== */}
 
             <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
 
-              <div className="mb-6 flex items-center justify-between">
+              <div className="mb-5 flex items-center justify-between">
 
                 <div className="flex items-center gap-3">
 
-                  <div className="rounded-lg bg-blue-500/10 p-2 text-blue-400">
-                    <ShieldCheck size={19} />
+                  <div className="rounded-lg bg-blue-500/10 p-2">
+
+                    <ShieldCheck
+                      size={19}
+                      className="text-blue-400"
+                    />
+
                   </div>
 
                   <div>
@@ -515,7 +648,7 @@ export default function ThreatFeedPage() {
                       VirusTotal
                     </h3>
 
-                    <p className="text-xs text-slate-500">
+                    <p className="mt-1 text-xs text-slate-500">
                       Multi-engine reputation
                     </p>
 
@@ -572,6 +705,14 @@ export default function ThreatFeedPage() {
               <div className="mt-4 space-y-3 border-t border-slate-800 pt-4">
 
                 <DetailRow
+                  label="IP Address"
+                  value={
+                    virusTotalData?.ip ||
+                    ip
+                  }
+                />
+
+                <DetailRow
                   label="Country"
                   value={
                     virusTotalData?.country ||
@@ -609,289 +750,9 @@ export default function ThreatFeedPage() {
 
           </div>
 
-          {/* =================================================
-              CORRELATION ANALYSIS ACTION
-          ================================================= */}
-
-          <div className="mt-6 rounded-xl border border-blue-500/20 bg-blue-500/5 p-6">
-
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-
-              <div>
-
-                <div className="flex items-center gap-3">
-
-                  <div className="rounded-lg bg-blue-500/10 p-2 text-blue-400">
-                    <Activity size={19} />
-                  </div>
-
-                  <div>
-
-                    <h3 className="text-sm font-semibold text-white">
-                      Threat Correlation Analysis
-                    </h3>
-
-                    <p className="mt-1 text-xs text-slate-500">
-                      Correlate AbuseIPDB and VirusTotal
-                      intelligence into a unified threat assessment.
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-              <button
-                onClick={analyzeIndicator}
-                disabled={analyzing || loading}
-                className="flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-
-                {analyzing ? (
-                  <>
-                    <RefreshCw
-                      size={16}
-                      className="animate-spin"
-                    />
-
-                    Analyzing...
-                  </>
-                ) : (
-                  <>
-                    <ShieldAlert size={16} />
-
-                    Analyze Indicator
-                  </>
-                )}
-
-              </button>
-
-            </div>
-
-          </div>
-
-          {/* =================================================
-              ANALYSIS ERROR
-          ================================================= */}
-
-          {analysisError && (
-
-            <div className="mt-4 rounded-xl border border-red-500/20 bg-red-500/10 p-4">
-
-              <div className="flex items-start gap-3">
-
-                <AlertTriangle
-                  size={18}
-                  className="mt-0.5 text-red-400"
-                />
-
-                <div>
-
-                  <p className="text-sm font-medium text-red-400">
-                    Threat Analysis Failed
-                  </p>
-
-                  <p className="mt-1 text-xs text-red-300/80">
-                    {analysisError}
-                  </p>
-
-                </div>
-
-              </div>
-
-            </div>
-
-          )}
-
-          {/* =================================================
-              THREAT ANALYSIS RESULT
-          ================================================= */}
-
-          {analysisResult && (
-
-            <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
-
-              <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-                <div>
-
-                  <p className="text-xs uppercase tracking-widest text-blue-400">
-                    Correlation Engine
-                  </p>
-
-                  <h2 className="mt-1 text-base font-semibold text-white">
-                    Unified Threat Assessment
-                  </h2>
-
-                  <p className="mt-1 text-xs text-slate-500">
-                    Analysis generated for{" "}
-                    <span className="font-mono text-slate-300">
-                      {analysisResult.ip}
-                    </span>
-                  </p>
-
-                </div>
-
-                <span
-                  className={`w-fit rounded-md border px-3 py-1.5 text-xs font-medium ${threatLevelClass(
-                    analysisResult.threat_level
-                  )}`}
-                >
-                  {analysisResult.threat_level}
-                </span>
-
-              </div>
-
-              {/* SCORE CARDS */}
-
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-
-                <AnalysisMetric
-                  label="Threat Score"
-                  value={`${analysisResult.threat_score}/100`}
-                />
-
-                <AnalysisMetric
-                  label="AbuseIPDB Reports"
-                  value={String(
-                    analysisResult.abuseipdb
-                      ?.total_reports ?? 0
-                  )}
-                />
-
-                <AnalysisMetric
-                  label="Abuse Confidence"
-                  value={`${analysisResult.abuseipdb
-                    ?.confidence_score ?? 0}%`}
-                />
-
-              </div>
-
-              {/* VIRUSTOTAL */}
-
-              <div className="mt-6">
-
-                <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                  VirusTotal Correlation
-                </p>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-
-                  <AnalysisMetric
-                    label="Malicious"
-                    value={String(
-                      analysisResult.virustotal
-                        ?.malicious ?? 0
-                    )}
-                    danger={
-                      (analysisResult.virustotal
-                        ?.malicious ?? 0) > 0
-                    }
-                  />
-
-                  <AnalysisMetric
-                    label="Suspicious"
-                    value={String(
-                      analysisResult.virustotal
-                        ?.suspicious ?? 0
-                    )}
-                    warning={
-                      (analysisResult.virustotal
-                        ?.suspicious ?? 0) > 0
-                    }
-                  />
-
-                  <AnalysisMetric
-                    label="Harmless"
-                    value={String(
-                      analysisResult.virustotal
-                        ?.harmless ?? 0
-                    )}
-                  />
-
-                </div>
-
-              </div>
-
-              {/* RISK FACTORS */}
-
-              {analysisResult.analysis
-                ?.risk_factors &&
-                analysisResult.analysis.risk_factors
-                  .length > 0 && (
-
-                  <div className="mt-6">
-
-                    <div className="mb-3 flex items-center gap-2">
-
-                      <ShieldAlert
-                        size={17}
-                        className="text-yellow-400"
-                      />
-
-                      <h3 className="text-sm font-semibold text-white">
-                        Risk Factors
-                      </h3>
-
-                    </div>
-
-                    <div className="space-y-2">
-
-                      {analysisResult.analysis.risk_factors.map(
-                        (factor, index) => (
-
-                          <div
-                            key={`${factor}-${index}`}
-                            className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-xs text-slate-300"
-                          >
-                            {factor}
-                          </div>
-
-                        )
-                      )}
-
-                    </div>
-
-                  </div>
-
-                )}
-
-              {/* SECURITY ASSESSMENT */}
-
-              {analysisResult.analysis
-                ?.summary && (
-
-                <div className="mt-6 rounded-lg border border-slate-800 bg-slate-950 p-5">
-
-                  <div className="flex items-center gap-2">
-
-                    <ShieldCheck
-                      size={17}
-                      className="text-emerald-400"
-                    />
-
-                    <h3 className="text-sm font-semibold text-white">
-                      Security Assessment
-                    </h3>
-
-                  </div>
-
-                  <p className="mt-3 text-sm leading-6 text-slate-300">
-                    {analysisResult.analysis.summary}
-                  </p>
-
-                </div>
-
-              )}
-
-            </div>
-
-          )}
-
-          {/* =================================================
-              SUMMARY
-          ================================================= */}
+          {/* ==================================================
+              FEED SUMMARY
+          =================================================== */}
 
           <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
 
@@ -933,19 +794,274 @@ export default function ThreatFeedPage() {
               <SummaryItem
                 icon={<Activity size={17} />}
                 title="Status"
-                value={
-                  analysisResult
-                    ? "Analysis Complete"
-                    : "Feeds Queried"
-                }
+                value="Analysis Complete"
               />
 
             </div>
 
           </div>
 
-        </div>
+          {/* ==================================================
+              CORRELATION ACTION
+          =================================================== */}
 
+          <div className="mt-6 rounded-xl border border-blue-500/20 bg-blue-500/5 p-6">
+
+            <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
+
+              <div>
+
+                <div className="flex items-center gap-2">
+
+                  <ShieldAlert
+                    size={18}
+                    className="text-blue-400"
+                  />
+
+                  <h3 className="text-sm font-semibold text-white">
+                    Run Threat Correlation
+                  </h3>
+
+                </div>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  Combine threat intelligence sources and
+                  calculate an overall threat score.
+                </p>
+
+              </div>
+
+              <button
+                type="button"
+                onClick={analyzeIndicator}
+                disabled={analyzing}
+                className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+
+                {analyzing ? (
+                  <>
+                    <RefreshCw
+                      size={17}
+                      className="animate-spin"
+                    />
+
+                    Analyzing...
+                  </>
+                ) : (
+                  <>
+                    <Activity size={17} />
+
+                    Analyze Threat
+                  </>
+                )}
+
+              </button>
+
+            </div>
+
+            {analysisError && (
+              <div className="mt-4 rounded-lg border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-400">
+                {analysisError}
+              </div>
+            )}
+
+          </div>
+
+        </div>
+      )}
+
+      {/* ======================================================
+          ANALYSIS RESULT
+      ====================================================== */}
+
+      {hasAnalysis && !analyzing && (
+        <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/50 p-6">
+
+          <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
+
+            <div>
+
+              <div className="flex items-center gap-2">
+
+                <Activity
+                  size={18}
+                  className="text-blue-400"
+                />
+
+                <h2 className="text-sm font-semibold text-white">
+                  Threat Correlation Result
+                </h2>
+
+              </div>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Combined assessment for{" "}
+                {analysisResult?.ip || ip}
+              </p>
+
+            </div>
+
+            <ThreatLevelBadge
+              level={
+                analysisResult?.threat_level
+              }
+            />
+
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+
+            {/* Score */}
+
+            <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
+
+              <p className="text-xs text-slate-500">
+                Threat Score
+              </p>
+
+              <p className="mt-2 text-3xl font-semibold text-white">
+                {analysisResult?.threat_score ?? 0}
+              </p>
+
+            </div>
+
+            {/* Abuse Confidence */}
+
+            <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
+
+              <p className="text-xs text-slate-500">
+                AbuseIPDB Confidence
+              </p>
+
+              <p className="mt-2 text-3xl font-semibold text-white">
+                {analysisResult?.abuseipdb?.confidence_score ?? 0}%
+              </p>
+
+            </div>
+
+            {/* Reports */}
+
+            <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
+
+              <p className="text-xs text-slate-500">
+                Abuse Reports
+              </p>
+
+              <p className="mt-2 text-3xl font-semibold text-white">
+                {analysisResult?.abuseipdb?.total_reports ?? 0}
+              </p>
+
+            </div>
+
+          </div>
+
+          {/* VirusTotal */}
+
+          <div className="mt-6">
+
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              VirusTotal Detection
+            </h3>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+
+              <Metric
+                label="Malicious"
+                value={String(
+                  analysisResult?.virustotal?.malicious ??
+                    0
+                )}
+                danger={
+                  (analysisResult?.virustotal?.malicious ??
+                    0) > 0
+                }
+              />
+
+              <Metric
+                label="Suspicious"
+                value={String(
+                  analysisResult?.virustotal?.suspicious ??
+                    0
+                )}
+                warning={
+                  (analysisResult?.virustotal?.suspicious ??
+                    0) > 0
+                }
+              />
+
+              <Metric
+                label="Harmless"
+                value={String(
+                  analysisResult?.virustotal?.harmless ??
+                    0
+                )}
+              />
+
+            </div>
+
+          </div>
+
+          {/* Risk Factors */}
+
+          <div className="mt-6">
+
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Risk Factors
+            </h3>
+
+            {analysisResult?.analysis?.risk_factors
+              ?.length ? (
+              <div className="space-y-2">
+
+                {analysisResult.analysis.risk_factors.map(
+                  (factor, index) => (
+                    <div
+                      key={`${factor}-${index}`}
+                      className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-3 text-sm text-slate-300"
+                    >
+                      <span className="mr-3 text-xs font-semibold text-yellow-400">
+                        {index + 1}.
+                      </span>
+
+                      {factor}
+                    </div>
+                  )
+                )}
+
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">
+                No significant risk factors identified.
+              </p>
+            )}
+
+          </div>
+
+          {/* Summary */}
+
+          <div className="mt-6 rounded-lg border border-slate-800 bg-slate-950 p-5">
+
+            <div className="flex items-center gap-2">
+
+              <ShieldCheck
+                size={17}
+                className="text-emerald-400"
+              />
+
+              <h3 className="text-sm font-semibold text-white">
+                Analyst Summary
+              </h3>
+
+            </div>
+
+            <p className="mt-3 text-sm leading-7 text-slate-300">
+              {analysisResult?.analysis?.summary ||
+                "No analysis summary available."}
+            </p>
+
+          </div>
+
+        </div>
       )}
 
       {/* ======================================================
@@ -956,7 +1072,6 @@ export default function ThreatFeedPage() {
         !abuseData &&
         !virusTotalData &&
         !error && (
-
           <div className="mt-6 flex h-80 flex-col items-center justify-center rounded-xl border border-dashed border-slate-800 bg-slate-900/30">
 
             <div className="rounded-full bg-slate-900 p-4">
@@ -972,222 +1087,12 @@ export default function ThreatFeedPage() {
               No threat feed query performed
             </p>
 
-            <p className="mt-1 text-xs text-slate-600">
-              Enter an IP address above to retrieve
-              intelligence.
+            <p className="mt-1 text-xs text-slate-700">
+              Enter an IP address above to begin investigation.
             </p>
 
           </div>
-
         )}
-
-    </div>
-  );
-}
-
-/* ============================================================
-   FEED STATUS
-============================================================ */
-
-function FeedStatus({
-  name,
-  description,
-  icon,
-  active,
-}: {
-  name: string;
-  description: string;
-  icon: React.ReactNode;
-  active: boolean;
-}) {
-  return (
-    <div className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/50 p-5">
-
-      <div className="flex items-center gap-3">
-
-        <div className="rounded-lg bg-slate-800 p-2 text-slate-400">
-          {icon}
-        </div>
-
-        <div>
-
-          <h3 className="text-sm font-medium text-white">
-            {name}
-          </h3>
-
-          <p className="mt-1 text-xs text-slate-500">
-            {description}
-          </p>
-
-        </div>
-
-      </div>
-
-      <div className="flex items-center gap-2">
-
-        <span
-          className={`h-2 w-2 rounded-full ${
-            active
-              ? "bg-emerald-400"
-              : "bg-red-400"
-          }`}
-        />
-
-        <span
-          className={`text-xs ${
-            active
-              ? "text-emerald-400"
-              : "text-red-400"
-          }`}
-        >
-          {active
-            ? "Operational"
-            : "Unavailable"}
-        </span>
-
-      </div>
-
-    </div>
-  );
-}
-
-/* ============================================================
-   METRIC
-============================================================ */
-
-function Metric({
-  label,
-  value,
-  danger,
-  warning,
-}: {
-  label: string;
-  value: string;
-  danger?: boolean;
-  warning?: boolean;
-}) {
-  let valueClass = "text-white";
-
-  if (danger) {
-    valueClass = "text-red-400";
-  } else if (warning) {
-    valueClass = "text-yellow-400";
-  }
-
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950 p-4">
-
-      <p className="text-xs text-slate-500">
-        {label}
-      </p>
-
-      <p
-        className={`mt-2 text-xl font-semibold ${valueClass}`}
-      >
-        {value}
-      </p>
-
-    </div>
-  );
-}
-
-/* ============================================================
-   ANALYSIS METRIC
-============================================================ */
-
-function AnalysisMetric({
-  label,
-  value,
-  danger,
-  warning,
-}: {
-  label: string;
-  value: string;
-  danger?: boolean;
-  warning?: boolean;
-}) {
-  let valueClass = "text-white";
-
-  if (danger) {
-    valueClass = "text-red-400";
-  } else if (warning) {
-    valueClass = "text-yellow-400";
-  }
-
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
-
-      <p className="text-xs uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-
-      <p
-        className={`mt-2 text-2xl font-semibold ${valueClass}`}
-      >
-        {value}
-      </p>
-
-    </div>
-  );
-}
-
-/* ============================================================
-   DETAIL ROW
-============================================================ */
-
-function DetailRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-
-      <span className="text-xs text-slate-500">
-        {label}
-      </span>
-
-      <span className="max-w-[65%] truncate text-right text-xs text-slate-300">
-        {value}
-      </span>
-
-    </div>
-  );
-}
-
-/* ============================================================
-   SUMMARY ITEM
-============================================================ */
-
-function SummaryItem({
-  icon,
-  title,
-  value,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  value: string;
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950 p-4">
-
-      <div className="text-slate-500">
-        {icon}
-      </div>
-
-      <div className="min-w-0">
-
-        <p className="text-xs text-slate-500">
-          {title}
-        </p>
-
-        <p className="mt-1 truncate text-sm font-medium text-slate-200">
-          {value}
-        </p>
-
-      </div>
 
     </div>
   );

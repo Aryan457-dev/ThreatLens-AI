@@ -13,9 +13,7 @@ import {
   Clock,
 } from "lucide-react";
 
-const API_BASE =
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://127.0.0.1:8000/api/v1";
+import { api } from "@/lib/api";
 
 type IOC = {
   id: number;
@@ -119,32 +117,27 @@ export default function DashboardPage() {
     try {
       setRefreshing(true);
 
-      const [iocResponse, analysisResponse] = await Promise.all([
-        fetch(`${API_BASE}/iocs?limit=100`),
-        fetch(`${API_BASE}/threat-analysis?limit=100`),
+      const [iocData, analysisData] = await Promise.all([
+        api.get("/api/v1/iocs?limit=100"),
+        api.get("/api/v1/threat-analysis?limit=100"),
       ]);
 
-      if (iocResponse.ok) {
-        const iocData = await iocResponse.json();
+      setIocs(
+        Array.isArray(iocData)
+          ? (iocData as IOC[])
+          : []
+      );
 
-        setIocs(
-          Array.isArray(iocData)
-            ? iocData
-            : []
-        );
-      }
-
-      if (analysisResponse.ok) {
-        const analysisData = await analysisResponse.json();
-
-        setAnalyses(
-          Array.isArray(analysisData)
-            ? analysisData
-            : []
-        );
-      }
+      setAnalyses(
+        Array.isArray(analysisData)
+          ? (analysisData as ThreatAnalysis[])
+          : []
+      );
     } catch (error) {
       console.error("Dashboard API error:", error);
+
+      setIocs([]);
+      setAnalyses([]);
     } finally {
       setLoading(false);
       setRefreshing(false);

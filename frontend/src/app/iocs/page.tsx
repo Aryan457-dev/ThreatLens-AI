@@ -1,16 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import {
-  Search,
-  Plus,
-  ShieldAlert,
-  RefreshCw,
-  Eye,
-  Trash2,
-  X,
-  Pencil,
-} from "lucide-react";
+import { api } from "@/lib/api";
 
 type IOC = {
   id: number;
@@ -19,6 +10,24 @@ type IOC = {
   source: string;
   threat_level: string;
   created_at?: string;
+  updated_at?: string;
+};
+
+type AnalysisResult = {
+  id?: number;
+  ip?: string;
+  risk_score?: number;
+  threat_level?: string;
+  malicious?: number;
+  suspicious?: number;
+  harmless?: number;
+  abuse_confidence_score?: number;
+  vt_malicious?: number;
+  vt_suspicious?: number;
+  vt_harmless?: number;
+  risk_factors?: string[];
+  summary?: string;
+  [key: string]: unknown;
 };
 
 type NewIOC = {
@@ -27,30 +36,6 @@ type NewIOC = {
   source: string;
   threat_level: string;
 };
-
-type AnalysisResult = {
-  ip: string;
-  threat_score: number;
-  threat_level: string;
-
-  abuseipdb?: {
-    confidence_score: number;
-    total_reports: number;
-  };
-
-  virustotal?: {
-    malicious: number;
-    suspicious: number;
-    harmless: number;
-  };
-
-  analysis?: {
-    risk_factors: string[];
-    summary: string;
-  };
-};
-
-const API_URL = "http://127.0.0.1:8000";
 
 export default function IOCIntelligence() {
   const [iocs, setIocs] = useState<IOC[]>([]);
@@ -61,41 +46,20 @@ export default function IOCIntelligence() {
   const [typeFilter, setTypeFilter] = useState("ALL");
   const [threatFilter, setThreatFilter] = useState("ALL");
 
-  // ============================================================
-  // ADD IOC MODAL
-  // ============================================================
-
   const [showAddModal, setShowAddModal] = useState(false);
-
-  // ============================================================
-  // EDIT IOC MODAL
-  // ============================================================
-
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editingIOC, setEditingIOC] = useState<IOC | null>(null);
-  const [editing, setEditing] = useState(false);
-
-  // ============================================================
-  // IOC DETAILS
-  // ============================================================
-
-  const [selectedIOC, setSelectedIOC] = useState<IOC | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
 
-  // ============================================================
-  // THREAT ANALYSIS
-  // ============================================================
+  const [selectedIOC, setSelectedIOC] = useState<IOC | null>(null);
+  const [editingIOC, setEditingIOC] = useState<IOC | null>(null);
 
+  const [editing, setEditing] = useState(false);
   const [analyzingIOC, setAnalyzingIOC] = useState(false);
 
   const [analysisResult, setAnalysisResult] =
     useState<AnalysisResult | null>(null);
 
   const [analysisError, setAnalysisError] = useState("");
-
-  // ============================================================
-  // NEW IOC
-  // ============================================================
 
   const [newIOC, setNewIOC] = useState<NewIOC>({
     value: "",
@@ -115,11 +79,6 @@ export default function IOCIntelligence() {
 
       const params = new URLSearchParams();
 
-      params.set("limit", "100");
-      params.set("offset", "0");
-      params.set("sort_by", "created_at");
-      params.set("sort_order", "desc");
-
       if (search.trim()) {
         params.set("search", search.trim());
       }
@@ -132,31 +91,20 @@ export default function IOCIntelligence() {
         params.set("threat_level", threatFilter);
       }
 
-      const response = await fetch(
-        `${API_URL}/api/v1/iocs?${params.toString()}`,
-        {
-          cache: "no-store",
-        }
+      const query = params.toString();
+
+      const data = await api.get(
+        `/api/v1/iocs${query ? `?${query}` : ""}`
       );
-
-      if (!response.ok) {
-        const errorText = await response.text();
-
-        console.error("IOC API error:", errorText);
-
-        throw new Error(
-          `Failed to fetch IOCs (${response.status})`
-        );
-      }
-
-      const data = await response.json();
 
       setIocs(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("IOC fetch error:", err);
 
       setError(
-        "Unable to load IOC intelligence from the backend."
+        err instanceof Error
+          ? err.message
+          : "Unable to load IOC intelligence from the backend."
       );
     } finally {
       setLoading(false);
@@ -186,10 +134,23 @@ export default function IOCIntelligence() {
       return (
         ioc.value?.toLowerCase().includes(query) ||
         ioc.source?.toLowerCase().includes(query) ||
-        ioc.type?.toLowerCase().includes(query)
+        ioc.type?.toLowerCase().includes(query) ||
+        ioc.threat_level?.toLowerCase().includes(query)
       );
     });
   }, [iocs, search]);
+
+  // ============================================================
+  // STATISTICS
+  // ============================================================
+
+  const totalIOCs = iocs.length;
+
+  const highRiskIOCs = iocs.filter((ioc) => {
+    const level = ioc.threat_level?.toUpperCase();
+
+    return level === "HIGH" || level === "CRITICAL";
+  }).length;
 
   // ============================================================
   // ADD IOC
@@ -204,33 +165,12 @@ export default function IOCIntelligence() {
     }
 
     try {
-      const response = await fetch(
-        `${API_URL}/api/v1/iocs`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            value,
-            type: newIOC.type,
-            source: newIOC.source.trim() || "Manual",
-            threat_level: newIOC.threat_level,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData =
-          await response.json().catch(() => null);
-
-        console.error("Create IOC error:", errorData);
-
-        throw new Error(
-          errorData?.detail ||
-            `Failed to create IOC (${response.status})`
-        );
-      }
+      await api.post("/api/v1/iocs", {
+        value,
+        type: newIOC.type,
+        source: newIOC.source.trim() || "Manual",
+        threat_level: newIOC.threat_level,
+      });
 
       setShowAddModal(false);
 
@@ -297,33 +237,16 @@ export default function IOCIntelligence() {
     try {
       setEditing(true);
 
-      const response = await fetch(
-        `${API_URL}/api/v1/iocs/${editingIOC.id}`,
+      const data = await api.put(
+        `/api/v1/iocs/${editingIOC.id}`,
         {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            value,
-            type: editingIOC.type,
-            source: editingIOC.source.trim() || "Manual",
-            threat_level: editingIOC.threat_level,
-          }),
+          value,
+          type: editingIOC.type,
+          source: editingIOC.source.trim() || "Manual",
+          threat_level: editingIOC.threat_level,
         }
       );
 
-      const data =
-        await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(
-          data?.detail ||
-            `Failed to update IOC (${response.status})`
-        );
-      }
-
-      // Update local list immediately
       setIocs((current) =>
         current.map((ioc) =>
           ioc.id === editingIOC.id
@@ -332,8 +255,6 @@ export default function IOCIntelligence() {
         )
       );
 
-      // If this IOC is currently selected,
-      // update the details view as well.
       if (selectedIOC?.id === editingIOC.id) {
         setSelectedIOC(data);
       }
@@ -341,7 +262,6 @@ export default function IOCIntelligence() {
       setShowEditModal(false);
       setEditingIOC(null);
 
-      // Refresh from backend to ensure data is synchronized.
       await fetchIOCs();
     } catch (err) {
       console.error("Update IOC error:", err);
@@ -370,22 +290,7 @@ export default function IOCIntelligence() {
     }
 
     try {
-      const response = await fetch(
-        `${API_URL}/api/v1/iocs/${id}`,
-        {
-          method: "DELETE",
-        }
-      );
-
-      if (!response.ok) {
-        const errorData =
-          await response.json().catch(() => null);
-
-        throw new Error(
-          errorData?.detail ||
-            `Failed to delete IOC (${response.status})`
-        );
-      }
+      await api.delete(`/api/v1/iocs/${id}`);
 
       setIocs((current) =>
         current.filter((ioc) => ioc.id !== id)
@@ -459,6 +364,18 @@ export default function IOCIntelligence() {
   }
 
   // ============================================================
+  // TYPE BADGE
+  // ============================================================
+
+  function typeBadge(type: string) {
+    return (
+      <span className="rounded-md border border-blue-500/20 bg-blue-500/10 px-2 py-1 text-xs font-medium text-blue-400">
+        {type}
+      </span>
+    );
+  }
+
+  // ============================================================
   // ANALYZE IOC
   // ============================================================
 
@@ -479,27 +396,11 @@ export default function IOCIntelligence() {
       setAnalysisError("");
       setAnalysisResult(null);
 
-      const response = await fetch(
-        `${API_URL}/api/v1/threat-analysis/${encodeURIComponent(
+      const data = await api.post(
+        `/api/v1/threat-analysis/${encodeURIComponent(
           selectedIOC.value
-        )}/analyze`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
+        )}/analyze`
       );
-
-      const data =
-        await response.json().catch(() => null);
-
-      if (!response.ok) {
-        throw new Error(
-          data?.detail ||
-            `Analysis failed with status ${response.status}`
-        );
-      }
 
       setAnalysisResult(data);
 
@@ -510,7 +411,7 @@ export default function IOCIntelligence() {
       setAnalysisError(
         err instanceof Error
           ? err.message
-          : "Unable to analyze this indicator."
+          : "Threat analysis failed."
       );
     } finally {
       setAnalyzingIOC(false);
@@ -518,431 +419,318 @@ export default function IOCIntelligence() {
   }
 
   // ============================================================
-  // STATISTICS
-  // ============================================================
-
-  const highRiskCount = iocs.filter((ioc) => {
-    const level = ioc.threat_level?.toUpperCase();
-
-    return (
-      level === "HIGH" ||
-      level === "CRITICAL"
-    );
-  }).length;
-
-  // ============================================================
-  // UI
+  // RENDER
   // ============================================================
 
   return (
-    <div className="min-h-full bg-slate-950 px-6 pb-8 pt-8">
+    <main className="min-h-screen bg-[#020617] px-6 py-8 text-white">
+      {/* HEADER */}
 
-      {/* ======================================================
-          HEADER
-      ====================================================== */}
-
-      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="mb-1 text-xs font-medium uppercase tracking-widest text-blue-400">
+          <div className="mb-2 text-sm font-semibold uppercase tracking-wider text-blue-400">
             Security Operations Center
-          </p>
+          </div>
 
-          <h1 className="text-2xl font-semibold text-white">
+          <h1 className="text-3xl font-bold">
             IOC Intelligence
           </h1>
 
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-400">
             Monitor, manage and investigate indicators of compromise.
           </p>
         </div>
 
-        <div className="flex gap-2">
-
+        <div className="flex gap-3">
           <button
             onClick={fetchIOCs}
             disabled={loading}
-            className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-300 transition hover:border-slate-600 hover:bg-slate-800 disabled:opacity-50"
+            className="rounded-lg border border-slate-700 bg-slate-900 px-5 py-3 text-sm font-medium text-slate-200 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <RefreshCw
-              size={15}
-              className={loading ? "animate-spin" : ""}
-            />
-
-            Refresh
+            ↻ Refresh
           </button>
 
           <button
             onClick={() => setShowAddModal(true)}
-            className="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-600"
+            className="rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-blue-500"
           >
-            <Plus size={16} />
-
-            Add IOC
+            + Add IOC
           </button>
-
         </div>
       </div>
 
-      {/* ======================================================
-          STATISTICS
-      ====================================================== */}
+      {/* STATISTICS */}
 
       <div className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="rounded-xl border border-slate-800 bg-[#0b1224] p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Total IOCs
+          </p>
 
-        <InfoCard
-          title="Total IOCs"
-          value={iocs.length.toString()}
-          description="Tracked indicators"
-        />
+          <p className="mt-3 text-3xl font-bold">
+            {totalIOCs}
+          </p>
 
-        <InfoCard
-          title="Filtered Results"
-          value={filteredIOCs.length.toString()}
-          description="Matching current filters"
-        />
-
-        <InfoCard
-          title="High Risk"
-          value={highRiskCount.toString()}
-          description="High / critical indicators"
-        />
-
-      </div>
-
-      {/* ======================================================
-          MAIN CARD
-      ====================================================== */}
-
-      <div className="rounded-xl border border-slate-800 bg-slate-900/50">
-
-        {/* ====================================================
-            TOOLBAR
-        ==================================================== */}
-
-        <div className="border-b border-slate-800 p-5">
-
-          <div className="flex flex-col gap-3 lg:flex-row">
-
-            {/* SEARCH */}
-
-            <div className="flex flex-1 items-center gap-3 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
-
-              <Search
-                size={17}
-                className="text-slate-500"
-              />
-
-              <input
-                type="text"
-                value={search}
-                onChange={(e) =>
-                  setSearch(e.target.value)
-                }
-                placeholder="Search IOC, type or source..."
-                className="w-full bg-transparent text-sm text-slate-200 outline-none placeholder:text-slate-600"
-              />
-
-            </div>
-
-            {/* TYPE FILTER */}
-
-            <select
-              value={typeFilter}
-              onChange={(e) =>
-                setTypeFilter(e.target.value)
-              }
-              className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-300 outline-none"
-            >
-              <option value="ALL">All Types</option>
-              <option value="IP">IP</option>
-              <option value="DOMAIN">Domain</option>
-              <option value="URL">URL</option>
-              <option value="HASH">Hash</option>
-            </select>
-
-            {/* THREAT FILTER */}
-
-            <select
-              value={threatFilter}
-              onChange={(e) =>
-                setThreatFilter(e.target.value)
-              }
-              className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-2 text-sm text-slate-300 outline-none"
-            >
-              <option value="ALL">
-                All Threat Levels
-              </option>
-
-              <option value="CRITICAL">
-                Critical
-              </option>
-
-              <option value="HIGH">
-                High
-              </option>
-
-              <option value="MEDIUM">
-                Medium
-              </option>
-
-              <option value="LOW">
-                Low
-              </option>
-            </select>
-
-          </div>
-
+          <p className="mt-1 text-sm text-slate-500">
+            Tracked indicators
+          </p>
         </div>
 
-        {/* ====================================================
-            CONTENT
-        ==================================================== */}
+        <div className="rounded-xl border border-slate-800 bg-[#0b1224] p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            Filtered Results
+          </p>
 
-        {loading ? (
+          <p className="mt-3 text-3xl font-bold">
+            {filteredIOCs.length}
+          </p>
 
-          <div className="flex h-72 items-center justify-center">
+          <p className="mt-1 text-sm text-slate-500">
+            Matching current filters
+          </p>
+        </div>
 
-            <div className="flex items-center gap-3 text-sm text-slate-500">
+        <div className="rounded-xl border border-slate-800 bg-[#0b1224] p-5">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+            High Risk
+          </p>
 
-              <RefreshCw
-                size={17}
-                className="animate-spin"
-              />
+          <p className="mt-3 text-3xl font-bold text-orange-400">
+            {highRiskIOCs}
+          </p>
 
-              Loading IOC intelligence...
+          <p className="mt-1 text-sm text-slate-500">
+            High / critical indicators
+          </p>
+        </div>
+      </div>
 
-            </div>
+      {/* IOC TABLE */}
 
+      <section className="overflow-hidden rounded-xl border border-slate-800 bg-[#0b1224]">
+        {/* FILTER BAR */}
+
+        <div className="flex flex-col gap-3 border-b border-slate-800 p-5 lg:flex-row">
+          <div className="relative flex-1">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">
+              ⌕
+            </span>
+
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search IOC, type or source..."
+              className="w-full rounded-lg border border-slate-800 bg-[#020617] py-3 pl-11 pr-4 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500"
+            />
           </div>
 
-        ) : error ? (
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="rounded-lg border border-slate-800 bg-[#020617] px-4 py-3 text-sm text-slate-200 outline-none"
+          >
+            <option value="ALL">All Types</option>
+            <option value="IP">IP</option>
+            <option value="DOMAIN">Domain</option>
+            <option value="URL">URL</option>
+            <option value="HASH">Hash</option>
+            <option value="EMAIL">Email</option>
+          </select>
 
-          <div className="flex h-72 flex-col items-center justify-center">
+          <select
+            value={threatFilter}
+            onChange={(e) => setThreatFilter(e.target.value)}
+            className="rounded-lg border border-slate-800 bg-[#020617] px-4 py-3 text-sm text-slate-200 outline-none"
+          >
+            <option value="ALL">All Threat Levels</option>
+            <option value="CRITICAL">Critical</option>
+            <option value="HIGH">High</option>
+            <option value="MEDIUM">Medium</option>
+            <option value="LOW">Low</option>
+          </select>
+        </div>
 
-            <ShieldAlert
-              size={28}
-              className="mb-3 text-red-400"
-            />
+        {/* ERROR */}
 
-            <p className="text-sm text-red-400">
+        {error && (
+          <div className="flex min-h-[300px] flex-col items-center justify-center px-6 text-center">
+            <div className="mb-4 text-4xl">⚠</div>
+
+            <p className="mb-5 text-sm font-medium text-red-400">
               {error}
             </p>
 
             <button
               onClick={fetchIOCs}
-              className="mt-4 rounded-lg border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800"
+              className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm text-slate-300 transition hover:bg-slate-800"
             >
               Try Again
             </button>
-
           </div>
-
-        ) : filteredIOCs.length === 0 ? (
-
-          <div className="flex h-72 flex-col items-center justify-center">
-
-            <ShieldAlert
-              size={28}
-              className="mb-3 text-slate-600"
-            />
-
-            <p className="text-sm text-slate-500">
-              No IOC records found
-            </p>
-
-            <p className="mt-1 text-xs text-slate-600">
-              Add an IOC or change your filters.
-            </p>
-
-          </div>
-
-        ) : (
-
-          <div className="overflow-x-auto">
-
-            <table className="w-full text-left">
-
-              <thead>
-
-                <tr className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-600">
-
-                  <th className="px-6 py-4">
-                    Indicator
-                  </th>
-
-                  <th className="px-6 py-4">
-                    Type
-                  </th>
-
-                  <th className="px-6 py-4">
-                    Source
-                  </th>
-
-                  <th className="px-6 py-4">
-                    Threat Level
-                  </th>
-
-                  <th className="px-6 py-4">
-                    Created
-                  </th>
-
-                  <th className="px-6 py-4 text-right">
-                    Actions
-                  </th>
-
-                </tr>
-
-              </thead>
-
-              <tbody>
-
-                {filteredIOCs.map((ioc) => (
-
-                  <tr
-                    key={ioc.id}
-                    className="border-b border-slate-800/70 transition hover:bg-slate-800/30"
-                  >
-
-                    <td className="px-6 py-4">
-
-                      <span className="font-mono text-sm text-slate-200">
-                        {ioc.value}
-                      </span>
-
-                    </td>
-
-                    <td className="px-6 py-4">
-
-                      <span className="rounded-md border border-slate-700 px-2 py-1 text-xs text-slate-400">
-                        {ioc.type}
-                      </span>
-
-                    </td>
-
-                    <td className="px-6 py-4 text-sm text-slate-400">
-                      {ioc.source}
-                    </td>
-
-                    <td className="px-6 py-4">
-
-                      <span
-                        className={`rounded-md border px-2 py-1 text-xs font-medium ${threatBadge(
-                          ioc.threat_level
-                        )}`}
-                      >
-                        {ioc.threat_level}
-                      </span>
-
-                    </td>
-
-                    <td className="px-6 py-4 text-xs text-slate-500">
-
-                      {ioc.created_at
-                        ? new Date(
-                            ioc.created_at
-                          ).toLocaleDateString()
-                        : "—"}
-
-                    </td>
-
-                    <td className="px-6 py-4">
-
-                      <div className="flex justify-end gap-1">
-
-                        {/* VIEW */}
-
-                        <button
-                          title="View IOC"
-                          onClick={() =>
-                            openIOCDetails(ioc)
-                          }
-                          className="rounded-md p-2 text-slate-500 transition hover:bg-slate-800 hover:text-blue-400"
-                        >
-                          <Eye size={16} />
-                        </button>
-
-                        {/* EDIT */}
-
-                        <button
-                          title="Edit IOC"
-                          onClick={() =>
-                            openEditModal(ioc)
-                          }
-                          className="rounded-md p-2 text-slate-500 transition hover:bg-slate-800 hover:text-yellow-400"
-                        >
-                          <Pencil size={16} />
-                        </button>
-
-                        {/* DELETE */}
-
-                        <button
-                          title="Delete IOC"
-                          onClick={() =>
-                            deleteIOC(ioc.id)
-                          }
-                          className="rounded-md p-2 text-slate-500 transition hover:bg-slate-800 hover:text-red-400"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-
-                      </div>
-
-                    </td>
-
-                  </tr>
-
-                ))}
-
-              </tbody>
-
-            </table>
-
-          </div>
-
         )}
 
-      </div>
+        {/* LOADING */}
 
-      {/* ======================================================
+        {!error && loading && (
+          <div className="flex min-h-[300px] items-center justify-center">
+            <div className="text-sm text-slate-400">
+              Loading IOC intelligence...
+            </div>
+          </div>
+        )}
+
+        {/* EMPTY */}
+
+        {!error &&
+          !loading &&
+          filteredIOCs.length === 0 && (
+            <div className="flex min-h-[300px] flex-col items-center justify-center px-6 text-center">
+              <div className="mb-4 text-4xl text-slate-600">
+                ◉
+              </div>
+
+              <h3 className="text-lg font-semibold">
+                No IOCs found
+              </h3>
+
+              <p className="mt-2 max-w-md text-sm text-slate-500">
+                {search ||
+                typeFilter !== "ALL" ||
+                threatFilter !== "ALL"
+                  ? "Try changing your search or filters."
+                  : "Add your first indicator of compromise to begin tracking threats."}
+              </p>
+
+              {!search &&
+                typeFilter === "ALL" &&
+                threatFilter === "ALL" && (
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="mt-5 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold hover:bg-blue-500"
+                  >
+                    + Add IOC
+                  </button>
+                )}
+            </div>
+          )}
+
+        {/* TABLE */}
+
+        {!error &&
+          !loading &&
+          filteredIOCs.length > 0 && (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[850px] text-left">
+                <thead>
+                  <tr className="border-b border-slate-800 text-xs uppercase tracking-wide text-slate-500">
+                    <th className="px-6 py-4">IOC</th>
+                    <th className="px-6 py-4">Type</th>
+                    <th className="px-6 py-4">Source</th>
+                    <th className="px-6 py-4">Threat Level</th>
+                    <th className="px-6 py-4">Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredIOCs.map((ioc) => (
+                    <tr
+                      key={ioc.id}
+                      className="border-b border-slate-800/70 transition hover:bg-slate-900/60"
+                    >
+                      <td className="px-6 py-5">
+                        <button
+                          onClick={() => openIOCDetails(ioc)}
+                          className="max-w-[300px] truncate text-left font-mono text-sm text-blue-400 hover:text-blue-300"
+                        >
+                          {ioc.value}
+                        </button>
+                      </td>
+
+                      <td className="px-6 py-5">
+                        {typeBadge(ioc.type)}
+                      </td>
+
+                      <td className="px-6 py-5 text-sm text-slate-400">
+                        {ioc.source || "Unknown"}
+                      </td>
+
+                      <td className="px-6 py-5">
+                        <span
+                          className={`rounded-md border px-2.5 py-1 text-xs font-medium ${threatBadge(
+                            ioc.threat_level
+                          )}`}
+                        >
+                          {ioc.threat_level || "LOW"}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-5">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() =>
+                              openIOCDetails(ioc)
+                            }
+                            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:bg-slate-800"
+                          >
+                            View
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              openEditModal(ioc)
+                            }
+                            className="rounded-md border border-blue-500/30 px-3 py-1.5 text-xs text-blue-400 hover:bg-blue-500/10"
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              deleteIOC(ioc.id)
+                            }
+                            className="rounded-md border border-red-500/30 px-3 py-1.5 text-xs text-red-400 hover:bg-red-500/10"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </section>
+
+      {/* ========================================================
           ADD IOC MODAL
-      ====================================================== */}
+      ======================================================== */}
 
       {showAddModal && (
-
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
-
-          <div className="w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 shadow-2xl">
-
-            <div className="flex items-center justify-between border-b border-slate-800 px-6 py-4">
-
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-xl border border-slate-800 bg-[#0b1224] p-6 shadow-2xl">
+            <div className="mb-6 flex items-center justify-between">
               <div>
-
-                <h2 className="text-base font-semibold text-white">
+                <h2 className="text-xl font-bold">
                   Add IOC
                 </h2>
 
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-sm text-slate-500">
                   Add a new indicator of compromise.
                 </p>
-
               </div>
 
               <button
-                onClick={() =>
-                  setShowAddModal(false)
-                }
-                className="rounded-md p-2 text-slate-500 hover:bg-slate-800 hover:text-slate-300"
+                onClick={() => setShowAddModal(false)}
+                className="text-xl text-slate-500 hover:text-white"
               >
-                <X size={18} />
+                ×
               </button>
-
             </div>
 
-            <div className="space-y-4 p-6">
-
+            <div className="space-y-4">
               <div>
-
-                <label className="mb-2 block text-xs font-medium text-slate-400">
+                <label className="mb-2 block text-sm text-slate-400">
                   IOC Value
                 </label>
 
@@ -955,38 +743,59 @@ export default function IOCIntelligence() {
                     })
                   }
                   placeholder="e.g. 8.8.8.8"
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-blue-500"
+                  className="w-full rounded-lg border border-slate-800 bg-[#020617] px-4 py-3 font-mono text-sm text-white outline-none focus:border-blue-500"
                 />
+              </div>
 
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-2 block text-sm text-slate-400">
+                    Type
+                  </label>
+
+                  <select
+                    value={newIOC.type}
+                    onChange={(e) =>
+                      setNewIOC({
+                        ...newIOC,
+                        type: e.target.value,
+                      })
+                    }
+                    className="w-full rounded-lg border border-slate-800 bg-[#020617] px-4 py-3 text-sm text-white outline-none"
+                  >
+                    <option value="IP">IP</option>
+                    <option value="DOMAIN">Domain</option>
+                    <option value="URL">URL</option>
+                    <option value="HASH">Hash</option>
+                    <option value="EMAIL">Email</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-400">
+                    Threat Level
+                  </label>
+
+                  <select
+                    value={newIOC.threat_level}
+                    onChange={(e) =>
+                      setNewIOC({
+                        ...newIOC,
+                        threat_level: e.target.value,
+                      })
+                    }
+                    className="w-full rounded-lg border border-slate-800 bg-[#020617] px-4 py-3 text-sm text-white outline-none"
+                  >
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="CRITICAL">Critical</option>
+                  </select>
+                </div>
               </div>
 
               <div>
-
-                <label className="mb-2 block text-xs font-medium text-slate-400">
-                  Type
-                </label>
-
-                <select
-                  value={newIOC.type}
-                  onChange={(e) =>
-                    setNewIOC({
-                      ...newIOC,
-                      type: e.target.value,
-                    })
-                  }
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-300 outline-none"
-                >
-                  <option value="IP">IP</option>
-                  <option value="DOMAIN">Domain</option>
-                  <option value="URL">URL</option>
-                  <option value="HASH">Hash</option>
-                </select>
-
-              </div>
-
-              <div>
-
-                <label className="mb-2 block text-xs font-medium text-slate-400">
+                <label className="mb-2 block text-sm text-slate-400">
                   Source
                 </label>
 
@@ -999,135 +808,59 @@ export default function IOCIntelligence() {
                     })
                   }
                   placeholder="Manual"
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-blue-500"
+                  className="w-full rounded-lg border border-slate-800 bg-[#020617] px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                 />
-
               </div>
-
-              <div>
-
-                <label className="mb-2 block text-xs font-medium text-slate-400">
-                  Threat Level
-                </label>
-
-                <select
-                  value={newIOC.threat_level}
-                  onChange={(e) =>
-                    setNewIOC({
-                      ...newIOC,
-                      threat_level: e.target.value,
-                    })
-                  }
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-300 outline-none"
-                >
-                  <option value="LOW">
-                    Low
-                  </option>
-
-                  <option value="MEDIUM">
-                    Medium
-                  </option>
-
-                  <option value="HIGH">
-                    High
-                  </option>
-
-                  <option value="CRITICAL">
-                    Critical
-                  </option>
-
-                </select>
-
-              </div>
-
             </div>
 
-            <div className="flex justify-end gap-3 border-t border-slate-800 px-6 py-4">
-
+            <div className="mt-6 flex justify-end gap-3">
               <button
-                onClick={() =>
-                  setShowAddModal(false)
-                }
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-400 hover:bg-slate-800"
+                onClick={() => setShowAddModal(false)}
+                className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm text-slate-300 hover:bg-slate-800"
               >
                 Cancel
               </button>
 
               <button
                 onClick={addIOC}
-                className="rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+                className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold hover:bg-blue-500"
               >
                 Add IOC
               </button>
-
             </div>
-
           </div>
-
         </div>
-
       )}
 
-      {/* ======================================================
+      {/* ========================================================
           EDIT IOC MODAL
-      ====================================================== */}
+      ======================================================== */}
 
       {showEditModal && editingIOC && (
-
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              closeEditModal();
-            }
-          }}
-        >
-
-          <div className="w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 shadow-2xl">
-
-            {/* HEADER */}
-
-            <div className="flex items-center justify-between border-b border-slate-800 px-6 py-5">
-
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-xl border border-slate-800 bg-[#0b1224] p-6 shadow-2xl">
+            <div className="mb-6 flex items-center justify-between">
               <div>
+                <h2 className="text-xl font-bold">
+                  Edit IOC
+                </h2>
 
-                <div className="flex items-center gap-2">
-
-                  <div className="rounded-lg bg-yellow-500/10 p-2 text-yellow-400">
-                    <Pencil size={17} />
-                  </div>
-
-                  <h2 className="text-base font-semibold text-white">
-                    Edit IOC
-                  </h2>
-
-                </div>
-
-                <p className="mt-2 text-xs text-slate-500">
-                  Update the indicator information.
+                <p className="mt-1 text-sm text-slate-500">
+                  Update indicator information.
                 </p>
-
               </div>
 
               <button
                 onClick={closeEditModal}
-                disabled={editing}
-                className="rounded-md p-2 text-slate-500 transition hover:bg-slate-800 hover:text-slate-300 disabled:opacity-40"
+                className="text-xl text-slate-500 hover:text-white"
               >
-                <X size={18} />
+                ×
               </button>
-
             </div>
 
-            {/* FORM */}
-
-            <div className="space-y-4 p-6">
-
-              {/* IOC VALUE */}
-
+            <div className="space-y-4">
               <div>
-
-                <label className="mb-2 block text-xs font-medium text-slate-400">
+                <label className="mb-2 block text-sm text-slate-400">
                   IOC Value
                 </label>
 
@@ -1139,56 +872,59 @@ export default function IOCIntelligence() {
                       value: e.target.value,
                     })
                   }
-                  placeholder="e.g. 8.8.8.8"
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-blue-500"
+                  className="w-full rounded-lg border border-slate-800 bg-[#020617] px-4 py-3 font-mono text-sm text-white outline-none focus:border-blue-500"
                 />
-
               </div>
 
-              {/* TYPE */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="mb-2 block text-sm text-slate-400">
+                    Type
+                  </label>
 
-              <div>
+                  <select
+                    value={editingIOC.type}
+                    onChange={(e) =>
+                      setEditingIOC({
+                        ...editingIOC,
+                        type: e.target.value,
+                      })
+                    }
+                    className="w-full rounded-lg border border-slate-800 bg-[#020617] px-4 py-3 text-sm text-white outline-none"
+                  >
+                    <option value="IP">IP</option>
+                    <option value="DOMAIN">Domain</option>
+                    <option value="URL">URL</option>
+                    <option value="HASH">Hash</option>
+                    <option value="EMAIL">Email</option>
+                  </select>
+                </div>
 
-                <label className="mb-2 block text-xs font-medium text-slate-400">
-                  Type
-                </label>
+                <div>
+                  <label className="mb-2 block text-sm text-slate-400">
+                    Threat Level
+                  </label>
 
-                <select
-                  value={editingIOC.type}
-                  onChange={(e) =>
-                    setEditingIOC({
-                      ...editingIOC,
-                      type: e.target.value,
-                    })
-                  }
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-300 outline-none focus:border-blue-500"
-                >
-
-                  <option value="IP">
-                    IP
-                  </option>
-
-                  <option value="DOMAIN">
-                    Domain
-                  </option>
-
-                  <option value="URL">
-                    URL
-                  </option>
-
-                  <option value="HASH">
-                    Hash
-                  </option>
-
-                </select>
-
+                  <select
+                    value={editingIOC.threat_level}
+                    onChange={(e) =>
+                      setEditingIOC({
+                        ...editingIOC,
+                        threat_level: e.target.value,
+                      })
+                    }
+                    className="w-full rounded-lg border border-slate-800 bg-[#020617] px-4 py-3 text-sm text-white outline-none"
+                  >
+                    <option value="LOW">Low</option>
+                    <option value="MEDIUM">Medium</option>
+                    <option value="HIGH">High</option>
+                    <option value="CRITICAL">Critical</option>
+                  </select>
+                </div>
               </div>
 
-              {/* SOURCE */}
-
               <div>
-
-                <label className="mb-2 block text-xs font-medium text-slate-400">
+                <label className="mb-2 block text-sm text-slate-400">
                   Source
                 </label>
 
@@ -1200,61 +936,16 @@ export default function IOCIntelligence() {
                       source: e.target.value,
                     })
                   }
-                  placeholder="Manual"
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-200 outline-none placeholder:text-slate-600 focus:border-blue-500"
+                  className="w-full rounded-lg border border-slate-800 bg-[#020617] px-4 py-3 text-sm text-white outline-none focus:border-blue-500"
                 />
-
               </div>
-
-              {/* THREAT LEVEL */}
-
-              <div>
-
-                <label className="mb-2 block text-xs font-medium text-slate-400">
-                  Threat Level
-                </label>
-
-                <select
-                  value={editingIOC.threat_level}
-                  onChange={(e) =>
-                    setEditingIOC({
-                      ...editingIOC,
-                      threat_level: e.target.value,
-                    })
-                  }
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-300 outline-none focus:border-blue-500"
-                >
-
-                  <option value="LOW">
-                    Low
-                  </option>
-
-                  <option value="MEDIUM">
-                    Medium
-                  </option>
-
-                  <option value="HIGH">
-                    High
-                  </option>
-
-                  <option value="CRITICAL">
-                    Critical
-                  </option>
-
-                </select>
-
-              </div>
-
             </div>
 
-            {/* FOOTER */}
-
-            <div className="flex justify-end gap-3 border-t border-slate-800 px-6 py-4">
-
+            <div className="mt-6 flex justify-end gap-3">
               <button
                 onClick={closeEditModal}
                 disabled={editing}
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 disabled:opacity-50"
+                className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -1262,591 +953,261 @@ export default function IOCIntelligence() {
               <button
                 onClick={updateIOC}
                 disabled={editing}
-                className="flex items-center gap-2 rounded-lg bg-blue-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold hover:bg-blue-500 disabled:opacity-50"
               >
-
-                {editing ? (
-                  <>
-                    <RefreshCw
-                      size={15}
-                      className="animate-spin"
-                    />
-
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Pencil size={15} />
-
-                    Save Changes
-                  </>
-                )}
-
+                {editing ? "Saving..." : "Save Changes"}
               </button>
-
             </div>
-
           </div>
-
         </div>
-
       )}
 
-      {/* ======================================================
+      {/* ========================================================
           IOC DETAILS MODAL
-      ====================================================== */}
+      ======================================================== */}
 
       {showDetailsModal && selectedIOC && (
-
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) {
-              closeIOCDetails();
-            }
-          }}
-        >
-
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-slate-800 bg-slate-900 shadow-2xl">
-
-            {/* HEADER */}
-
-            <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-800 bg-slate-900 px-6 py-5">
-
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-8 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-slate-800 bg-[#0b1224] p-6 shadow-2xl">
+            <div className="mb-6 flex items-start justify-between">
               <div>
-
-                <p className="text-xs font-medium uppercase tracking-widest text-blue-400">
+                <div className="mb-2 text-sm font-semibold uppercase tracking-wider text-blue-400">
                   IOC Investigation
-                </p>
+                </div>
 
-                <h2 className="mt-1 text-lg font-semibold text-white">
-                  Indicator Details
+                <h2 className="break-all font-mono text-xl font-bold">
+                  {selectedIOC.value}
                 </h2>
-
               </div>
 
               <button
                 onClick={closeIOCDetails}
                 disabled={analyzingIOC}
-                className="rounded-md p-2 text-slate-500 transition hover:bg-slate-800 hover:text-slate-300 disabled:opacity-40"
+                className="text-2xl text-slate-500 hover:text-white disabled:opacity-50"
               >
-                <X size={18} />
+                ×
               </button>
-
             </div>
 
-            <div className="space-y-5 p-6">
+            {/* IOC INFORMATION */}
 
-              {/* INDICATOR */}
-
-              <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
-
-                <p className="text-xs uppercase tracking-wide text-slate-500">
-                  Indicator
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <div className="rounded-lg border border-slate-800 bg-[#020617] p-4">
+                <p className="text-xs uppercase text-slate-500">
+                  Type
                 </p>
 
-                <p className="mt-2 break-all font-mono text-lg text-white">
-                  {selectedIOC.value}
+                <p className="mt-2 text-sm font-semibold">
+                  {selectedIOC.type}
+                </p>
+              </div>
+
+              <div className="rounded-lg border border-slate-800 bg-[#020617] p-4">
+                <p className="text-xs uppercase text-slate-500">
+                  Source
                 </p>
 
+                <p className="mt-2 text-sm font-semibold">
+                  {selectedIOC.source}
+                </p>
               </div>
 
-              {/* DETAILS */}
+              <div className="rounded-lg border border-slate-800 bg-[#020617] p-4">
+                <p className="text-xs uppercase text-slate-500">
+                  Threat Level
+                </p>
 
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-
-                <DetailItem
-                  label="Type"
-                  value={selectedIOC.type}
-                />
-
-                <DetailItem
-                  label="Source"
-                  value={selectedIOC.source}
-                />
-
-                <DetailItem
-                  label="Threat Level"
-                  value={selectedIOC.threat_level}
-                  badge
-                />
-
-                <DetailItem
-                  label="Created"
-                  value={
-                    selectedIOC.created_at
-                      ? new Date(
-                          selectedIOC.created_at
-                        ).toLocaleString()
-                      : "Unknown"
-                  }
-                />
-
+                <span
+                  className={`mt-2 inline-block rounded-md border px-2.5 py-1 text-xs font-medium ${threatBadge(
+                    selectedIOC.threat_level
+                  )}`}
+                >
+                  {selectedIOC.threat_level}
+                </span>
               </div>
+            </div>
 
-              {/* THREAT INTELLIGENCE */}
+            {/* ACTIONS */}
 
-              <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
+            <div className="mt-6 flex flex-wrap gap-3">
+              <button
+                onClick={analyzeIOC}
+                disabled={analyzingIOC}
+                className="rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {analyzingIOC
+                  ? "Analyzing..."
+                  : "Run Threat Analysis"}
+              </button>
 
-                <div className="mb-4 flex items-center gap-3">
+              <button
+                onClick={() => {
+                  closeIOCDetails();
+                  openEditModal(selectedIOC);
+                }}
+                disabled={analyzingIOC}
+                className="rounded-lg border border-slate-700 px-5 py-3 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+              >
+                Edit IOC
+              </button>
+            </div>
 
-                  <div className="rounded-lg bg-blue-500/10 p-2 text-blue-400">
-                    <ShieldAlert size={18} />
-                  </div>
+            {/* ANALYSIS ERROR */}
 
+            {analysisError && (
+              <div className="mt-6 rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-400">
+                {analysisError}
+              </div>
+            )}
+
+            {/* ANALYSIS RESULT */}
+
+            {analysisResult && (
+              <div className="mt-8">
+                <div className="mb-4 flex items-center justify-between">
                   <div>
-
-                    <h3 className="text-sm font-semibold text-white">
-                      Threat Intelligence
-                    </h3>
-
-                    <p className="text-xs text-slate-500">
-                      Current IOC intelligence status
-                    </p>
-
-                  </div>
-
-                </div>
-
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-
-                  <div className="rounded-lg border border-slate-800 p-4">
-
-                    <p className="text-xs text-slate-500">
-                      Threat Level
-                    </p>
-
-                    <span
-                      className={`mt-2 inline-block rounded-md border px-2 py-1 text-xs font-medium ${threatBadge(
-                        selectedIOC.threat_level
-                      )}`}
-                    >
-                      {selectedIOC.threat_level}
-                    </span>
-
-                  </div>
-
-                  <div className="rounded-lg border border-slate-800 p-4">
-
-                    <p className="text-xs text-slate-500">
-                      Source
-                    </p>
-
-                    <p className="mt-2 text-sm font-medium text-slate-200">
-                      {selectedIOC.source}
-                    </p>
-
-                  </div>
-
-                  <div className="rounded-lg border border-slate-800 p-4">
-
-                    <p className="text-xs text-slate-500">
-                      IOC ID
-                    </p>
-
-                    <p className="mt-2 font-mono text-sm text-slate-200">
-                      #{selectedIOC.id}
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </div>
-
-              {/* THREAT ANALYSIS */}
-
-              <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
-
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-
-                  <div>
-
-                    <h3 className="text-sm font-semibold text-white">
+                    <h3 className="text-lg font-bold">
                       Threat Analysis
                     </h3>
 
-                    <p className="mt-1 text-xs text-slate-500">
-                      Query AbuseIPDB and VirusTotal for this indicator.
+                    <p className="mt-1 text-sm text-slate-500">
+                      Correlated intelligence from available threat feeds.
+                    </p>
+                  </div>
+                </div>
+
+                {/* RISK SCORE */}
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+                  <div className="rounded-lg border border-slate-800 bg-[#020617] p-4">
+                    <p className="text-xs uppercase text-slate-500">
+                      Risk Score
                     </p>
 
+                    <p className="mt-2 text-3xl font-bold text-blue-400">
+                      {analysisResult.risk_score ?? 0}
+                    </p>
+
+                    <p className="text-xs text-slate-600">
+                      out of 100
+                    </p>
                   </div>
 
-                  <button
-                    onClick={analyzeIOC}
-                    disabled={analyzingIOC}
-                    className="flex items-center justify-center gap-2 rounded-lg bg-blue-500 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
+                  <div className="rounded-lg border border-slate-800 bg-[#020617] p-4">
+                    <p className="text-xs uppercase text-slate-500">
+                      Malicious
+                    </p>
 
-                    {analyzingIOC ? (
-                      <>
-                        <RefreshCw
-                          size={16}
-                          className="animate-spin"
-                        />
-
-                        Analyzing...
-                      </>
-                    ) : (
-                      <>
-                        <ShieldAlert size={16} />
-
-                        Analyze Indicator
-                      </>
-                    )}
-
-                  </button>
-
-                </div>
-
-              </div>
-
-              {/* ANALYSIS ERROR */}
-
-              {analysisError && (
-
-                <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
-
-                  <div className="flex items-start gap-3">
-
-                    <ShieldAlert
-                      size={18}
-                      className="mt-0.5 text-red-400"
-                    />
-
-                    <div>
-
-                      <p className="text-sm font-medium text-red-400">
-                        Analysis Failed
-                      </p>
-
-                      <p className="mt-1 text-xs leading-5 text-red-300/80">
-                        {analysisError}
-                      </p>
-
-                    </div>
-
+                    <p className="mt-2 text-3xl font-bold text-red-400">
+                      {analysisResult.malicious ??
+                        analysisResult.vt_malicious ??
+                        0}
+                    </p>
                   </div>
 
+                  <div className="rounded-lg border border-slate-800 bg-[#020617] p-4">
+                    <p className="text-xs uppercase text-slate-500">
+                      Suspicious
+                    </p>
+
+                    <p className="mt-2 text-3xl font-bold text-yellow-400">
+                      {analysisResult.suspicious ??
+                        analysisResult.vt_suspicious ??
+                        0}
+                    </p>
+                  </div>
+
+                  <div className="rounded-lg border border-slate-800 bg-[#020617] p-4">
+                    <p className="text-xs uppercase text-slate-500">
+                      Harmless
+                    </p>
+
+                    <p className="mt-2 text-3xl font-bold text-emerald-400">
+                      {analysisResult.harmless ??
+                        analysisResult.vt_harmless ??
+                        0}
+                    </p>
+                  </div>
                 </div>
 
-              )}
+                {/* THREAT LEVEL */}
 
-              {/* ANALYSIS RESULT */}
-
-              {analysisResult && (
-
-                <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
-
-                  <div className="mb-5 flex items-center justify-between">
-
-                    <div>
-
-                      <h3 className="text-sm font-semibold text-white">
-                        Analysis Result
-                      </h3>
-
-                      <p className="mt-1 text-xs text-slate-500">
-                        Combined threat intelligence assessment
-                      </p>
-
-                    </div>
+                {analysisResult.threat_level && (
+                  <div className="mt-4 rounded-lg border border-slate-800 bg-[#020617] p-4">
+                    <p className="text-xs uppercase text-slate-500">
+                      Correlated Threat Level
+                    </p>
 
                     <span
-                      className={`rounded-md border px-2 py-1 text-xs font-medium ${threatBadge(
+                      className={`mt-2 inline-block rounded-md border px-3 py-1.5 text-sm font-medium ${threatBadge(
                         analysisResult.threat_level
                       )}`}
                     >
                       {analysisResult.threat_level}
                     </span>
-
                   </div>
+                )}
 
-                  <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                {/* SUMMARY */}
 
-                    <div className="rounded-lg border border-slate-800 p-4">
+                {analysisResult.summary && (
+                  <div className="mt-4 rounded-lg border border-slate-800 bg-[#020617] p-5">
+                    <h4 className="mb-2 text-sm font-semibold">
+                      Analysis Summary
+                    </h4>
 
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Threat Score
-                      </p>
-
-                      <p className="mt-2 text-2xl font-semibold text-white">
-                        {analysisResult.threat_score}
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-600">
-                        Risk score out of 100
-                      </p>
-
-                    </div>
-
-                    <div className="rounded-lg border border-slate-800 p-4">
-
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        AbuseIPDB Reports
-                      </p>
-
-                      <p className="mt-2 text-2xl font-semibold text-white">
-                        {analysisResult.abuseipdb?.total_reports ?? 0}
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-600">
-                        Total reports
-                      </p>
-
-                    </div>
-
-                    <div className="rounded-lg border border-slate-800 p-4">
-
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Abuse Confidence
-                      </p>
-
-                      <p className="mt-2 text-2xl font-semibold text-white">
-                        {analysisResult.abuseipdb?.confidence_score ?? 0}%
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-600">
-                        AbuseIPDB confidence
-                      </p>
-
-                    </div>
-
-                  </div>
-
-                  {/* VIRUSTOTAL */}
-
-                  <div className="mt-4">
-
-                    <p className="mb-3 text-xs font-medium uppercase tracking-wide text-slate-500">
-                      VirusTotal Results
+                    <p className="text-sm leading-6 text-slate-400">
+                      {analysisResult.summary}
                     </p>
-
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-
-                      <MetricCard
-                        label="Malicious"
-                        value={
-                          analysisResult.virustotal?.malicious ?? 0
-                        }
-                      />
-
-                      <MetricCard
-                        label="Suspicious"
-                        value={
-                          analysisResult.virustotal?.suspicious ?? 0
-                        }
-                      />
-
-                      <MetricCard
-                        label="Harmless"
-                        value={
-                          analysisResult.virustotal?.harmless ?? 0
-                        }
-                      />
-
-                    </div>
-
                   </div>
+                )}
 
-                  {/* RISK FACTORS */}
+                {/* RISK FACTORS */}
 
-                  {analysisResult.analysis?.risk_factors &&
-                    analysisResult.analysis.risk_factors.length > 0 && (
+                {Array.isArray(
+                  analysisResult.risk_factors
+                ) &&
+                  analysisResult.risk_factors.length > 0 && (
+                    <div className="mt-4 rounded-lg border border-slate-800 bg-[#020617] p-5">
+                      <h4 className="mb-3 text-sm font-semibold">
+                        Risk Factors
+                      </h4>
 
-                      <div className="mt-5">
+                      <ul className="space-y-2">
+                        {analysisResult.risk_factors.map(
+                          (factor, index) => (
+                            <li
+                              key={index}
+                              className="flex gap-3 text-sm text-slate-400"
+                            >
+                              <span className="text-red-400">
+                                •
+                              </span>
 
-                        <div className="mb-3 flex items-center gap-2">
-
-                          <ShieldAlert
-                            size={16}
-                            className="text-yellow-400"
-                          />
-
-                          <p className="text-sm font-semibold text-white">
-                            Risk Factors
-                          </p>
-
-                        </div>
-
-                        <div className="space-y-2">
-
-                          {analysisResult.analysis.risk_factors.map(
-                            (factor, index) => (
-
-                              <div
-                                key={`${factor}-${index}`}
-                                className="rounded-md border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs text-slate-300"
-                              >
-                                {factor}
-                              </div>
-
-                            )
-                          )}
-
-                        </div>
-
-                      </div>
-
-                    )}
-
-                  {/* SECURITY ASSESSMENT */}
-
-                  {analysisResult.analysis?.summary && (
-
-                    <div className="mt-5 rounded-lg border border-slate-800 bg-slate-900 p-4">
-
-                      <div className="flex items-center gap-2">
-
-                        <ShieldAlert
-                          size={16}
-                          className="text-emerald-400"
-                        />
-
-                        <p className="text-sm font-semibold text-white">
-                          Security Assessment
-                        </p>
-
-                      </div>
-
-                      <p className="mt-3 text-sm leading-6 text-slate-300">
-                        {analysisResult.analysis.summary}
-                      </p>
-
+                              <span>{factor}</span>
+                            </li>
+                          )
+                        )}
+                      </ul>
                     </div>
-
                   )}
+              </div>
+            )}
 
-                </div>
+            {/* FOOTER */}
 
-              )}
-
-            </div>
-
-            <div className="flex justify-end border-t border-slate-800 px-6 py-4">
-
+            <div className="mt-8 flex justify-end">
               <button
                 onClick={closeIOCDetails}
                 disabled={analyzingIOC}
-                className="rounded-lg border border-slate-700 px-4 py-2 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-slate-700 px-5 py-2.5 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50"
               >
                 Close
               </button>
-
             </div>
-
           </div>
-
         </div>
-
       )}
-
-    </div>
-  );
-}
-
-// ============================================================
-// DETAIL ITEM
-// ============================================================
-
-function DetailItem({
-  label,
-  value,
-  badge = false,
-}: {
-  label: string;
-  value: string;
-  badge?: boolean;
-}) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950 p-4">
-
-      <p className="text-xs uppercase tracking-wide text-slate-500">
-        {label}
-      </p>
-
-      {badge ? (
-
-        <span
-          className={`mt-2 inline-block rounded-md border px-2 py-1 text-xs font-medium ${
-            value.toUpperCase() === "CRITICAL"
-              ? "border-red-500/30 bg-red-500/10 text-red-400"
-              : value.toUpperCase() === "HIGH"
-              ? "border-orange-500/30 bg-orange-500/10 text-orange-400"
-              : value.toUpperCase() === "MEDIUM"
-              ? "border-yellow-500/30 bg-yellow-500/10 text-yellow-400"
-              : "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-          }`}
-        >
-          {value}
-        </span>
-
-      ) : (
-
-        <p className="mt-2 break-all text-sm text-slate-200">
-          {value}
-        </p>
-
-      )}
-
-    </div>
-  );
-}
-
-// ============================================================
-// METRIC CARD
-// ============================================================
-
-function MetricCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="rounded-lg border border-slate-800 p-4">
-
-      <p className="text-xs text-slate-500">
-        {label}
-      </p>
-
-      <p className="mt-2 text-xl font-semibold text-white">
-        {value}
-      </p>
-
-    </div>
-  );
-}
-
-// ============================================================
-// INFO CARD
-// ============================================================
-
-function InfoCard({
-  title,
-  value,
-  description,
-}: {
-  title: string;
-  value: string;
-  description: string;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
-
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-        {title}
-      </p>
-
-      <p className="mt-3 text-2xl font-semibold text-white">
-        {value}
-      </p>
-
-      <p className="mt-1 text-xs text-slate-600">
-        {description}
-      </p>
-
-    </div>
+    </main>
   );
 }

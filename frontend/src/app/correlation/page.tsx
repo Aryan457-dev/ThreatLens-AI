@@ -12,6 +12,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 
+import { api } from "../../lib/api";
+
 type ThreatAnalysis = {
   id: number;
   ip: string;
@@ -27,15 +29,15 @@ type ThreatAnalysis = {
   summary: string;
 };
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://127.0.0.1:8000/api/v1";
-
 export default function CorrelationPage() {
   const [ip, setIp] = useState("8.8.8.8");
   const [result, setResult] = useState<ThreatAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  // ============================================================
+  // ANALYZE IP
+  // ============================================================
 
   const analyzeIP = async () => {
     const cleanIP = ip.trim();
@@ -50,34 +52,41 @@ export default function CorrelationPage() {
     setResult(null);
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/threat-analysis/${encodeURIComponent(
+      /*
+       * Central API client automatically attaches:
+       *
+       * Authorization: Bearer <JWT>
+       *
+       * Backend endpoint:
+       * POST /api/v1/threat-analysis/{ip}/analyze
+       */
+
+      const data = await api.post(
+        `/api/v1/threat-analysis/${encodeURIComponent(
           cleanIP
-        )}/analyze`,
-        {
-          method: "POST",
-          headers: {
-            Accept: "application/json",
-          },
-        }
+        )}/analyze`
       );
 
-      const data = await response.json().catch(() => null);
-
       console.log("Correlation API Response:", data);
-
-      if (!response.ok) {
-        throw new Error(
-          data?.detail ||
-            `Threat analysis failed with status ${response.status}`
-        );
-      }
 
       if (!data || typeof data !== "object") {
         throw new Error(
           "Invalid response received from the backend."
         );
       }
+
+      /*
+       * Backend response:
+       *
+       * {
+       *   ip: "...",
+       *   threat_score: ...,
+       *   threat_level: "...",
+       *   abuseipdb: {...},
+       *   virustotal: {...},
+       *   analysis: {...}
+       * }
+       */
 
       const formattedResult: ThreatAnalysis = {
         id: data.id ?? Date.now(),
@@ -133,10 +142,19 @@ export default function CorrelationPage() {
     }
   };
 
+  // ============================================================
+  // THREAT LEVEL
+  // ============================================================
+
   const threatLevel =
     result?.threat_level?.toUpperCase() || "UNKNOWN";
 
-  const threatScore = result?.threat_score ?? 0;
+  const threatScore =
+    result?.threat_score ?? 0;
+
+  // ============================================================
+  // THREAT COLORS
+  // ============================================================
 
   const getThreatColor = () => {
     switch (threatLevel) {
@@ -176,6 +194,42 @@ export default function CorrelationPage() {
     }
   };
 
+  const getScoreColor = () => {
+    if (threatScore >= 80) {
+      return "text-red-400";
+    }
+
+    if (threatScore >= 60) {
+      return "text-orange-400";
+    }
+
+    if (threatScore >= 30) {
+      return "text-yellow-400";
+    }
+
+    return "text-emerald-400";
+  };
+
+  const getScoreBarColor = () => {
+    if (threatScore >= 80) {
+      return "bg-red-500";
+    }
+
+    if (threatScore >= 60) {
+      return "bg-orange-500";
+    }
+
+    if (threatScore >= 30) {
+      return "bg-yellow-500";
+    }
+
+    return "bg-emerald-500";
+  };
+
+  // ============================================================
+  // DATE FORMAT
+  // ============================================================
+
   const formatDate = (date: string) => {
     try {
       return new Date(date).toLocaleString();
@@ -183,6 +237,10 @@ export default function CorrelationPage() {
       return date;
     }
   };
+
+  // ============================================================
+  // UI
+  // ============================================================
 
   return (
     <main className="min-h-full bg-slate-950 text-slate-200">
@@ -192,66 +250,45 @@ export default function CorrelationPage() {
             PAGE HEADER
         ====================================================== */}
 
-        <section className="mb-7 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
+        <section className="mb-7">
+          <div className="mb-2 flex items-center gap-2 text-blue-400">
+            <Activity size={18} />
 
-          <div>
-            <div className="mb-2 flex items-center gap-2 text-blue-400">
-              <Activity size={18} />
-
-              <span className="text-xs font-semibold uppercase tracking-[0.18em]">
-                Security Operations Center
-              </span>
-            </div>
-
-            <h1 className="text-3xl font-semibold tracking-tight text-white">
-              Threat Correlation
-            </h1>
-
-            <p className="mt-2 text-sm text-slate-500">
-              Correlate intelligence from multiple threat sources
-              and determine the risk associated with an indicator.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-2">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-
-            <span className="text-xs font-medium text-emerald-400">
-              Intelligence Sources Operational
+            <span className="text-xs font-semibold uppercase tracking-[0.18em]">
+              Security Operations Center
             </span>
           </div>
 
+          <h1 className="text-3xl font-semibold text-white">
+            Threat Intelligence Correlation
+          </h1>
+
+          <p className="mt-2 max-w-3xl text-sm text-slate-500">
+            Correlate threat intelligence from multiple sources
+            to determine the risk associated with an IP address.
+          </p>
         </section>
 
         {/* =====================================================
-            SEARCH / ANALYZE
+            ANALYZE SECTION
         ====================================================== */}
 
-        <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
+        <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
 
-          <div className="mb-5 flex items-center gap-3">
+          <div className="mb-5">
+            <h2 className="text-sm font-semibold text-white">
+              Analyze Indicator
+            </h2>
 
-            <div className="rounded-lg bg-blue-500/10 p-2 text-blue-400">
-              <Target size={19} />
-            </div>
-
-            <div>
-              <h2 className="text-sm font-semibold text-white">
-                Correlate Indicator
-              </h2>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Enter an IP address to query configured threat
-                intelligence sources.
-              </p>
-            </div>
-
+            <p className="mt-1 text-xs text-slate-500">
+              Enter an IPv4 or IPv6 address to perform threat
+              correlation.
+            </p>
           </div>
 
-          <div className="flex flex-col gap-3 lg:flex-row">
+          <div className="flex flex-col gap-3 md:flex-row">
 
             <div className="relative flex-1">
-
               <Search
                 size={18}
                 className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500"
@@ -267,30 +304,18 @@ export default function CorrelationPage() {
                   }
                 }}
                 placeholder="Enter IP address..."
-                className="h-12 w-full rounded-lg border border-slate-800 bg-slate-950 px-11 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20"
+                className="w-full rounded-lg border border-slate-800 bg-slate-950 px-11 py-3 text-sm text-white outline-none transition focus:border-blue-500"
               />
-
             </div>
 
             <button
               onClick={analyzeIP}
               disabled={loading}
-              className="flex h-12 items-center justify-center gap-2 rounded-lg bg-blue-600 px-7 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-sm font-medium text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
+              <ShieldAlert size={18} />
 
-              {loading ? (
-                <Activity
-                  size={18}
-                  className="animate-spin"
-                />
-              ) : (
-                <ShieldAlert size={18} />
-              )}
-
-              {loading
-                ? "Correlating..."
-                : "Analyze Indicator"}
-
+              {loading ? "Analyzing..." : "Analyze IP"}
             </button>
 
           </div>
@@ -298,23 +323,10 @@ export default function CorrelationPage() {
           {/* ERROR */}
 
           {error && (
-            <div className="mt-4 flex items-start gap-3 rounded-lg border border-red-500/20 bg-red-500/5 px-4 py-3">
+            <div className="mt-4 flex items-center gap-3 rounded-lg border border-red-900/50 bg-red-950/30 px-4 py-3 text-sm text-red-400">
+              <AlertTriangle size={18} />
 
-              <AlertTriangle
-                size={18}
-                className="mt-0.5 shrink-0 text-red-400"
-              />
-
-              <div>
-                <p className="text-sm font-medium text-red-400">
-                  Analysis Failed
-                </p>
-
-                <p className="mt-1 text-xs text-red-400/70">
-                  {error}
-                </p>
-              </div>
-
+              <span>{error}</span>
             </div>
           )}
 
@@ -325,50 +337,17 @@ export default function CorrelationPage() {
         ====================================================== */}
 
         {loading && (
-          <section className="mt-6 rounded-xl border border-slate-800 bg-slate-900/40 p-10">
+          <section className="mt-6 flex h-40 items-center justify-center rounded-xl border border-slate-800 bg-slate-900/50">
 
-            <div className="flex flex-col items-center justify-center">
+            <div className="text-center">
 
-              <div className="rounded-full bg-blue-500/10 p-4 text-blue-400">
-                <Activity
-                  size={28}
-                  className="animate-spin"
-                />
-              </div>
+              <Activity
+                size={28}
+                className="mx-auto animate-pulse text-blue-400"
+              />
 
-              <p className="mt-4 text-sm font-medium text-slate-300">
-                Correlating threat intelligence
-              </p>
-
-              <p className="mt-2 text-xs text-slate-600">
-                Querying AbuseIPDB and VirusTotal...
-              </p>
-
-            </div>
-
-          </section>
-        )}
-
-        {/* =====================================================
-            EMPTY STATE
-        ====================================================== */}
-
-        {!result && !loading && !error && (
-          <section className="mt-6 rounded-xl border border-dashed border-slate-800 bg-slate-900/20 p-16">
-
-            <div className="mx-auto max-w-md text-center">
-
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-xl bg-slate-900 text-slate-600">
-                <Activity size={27} />
-              </div>
-
-              <h2 className="mt-5 text-sm font-semibold text-slate-300">
-                Ready for Threat Correlation
-              </h2>
-
-              <p className="mt-2 text-xs leading-5 text-slate-600">
-                Enter an IP address above to collect intelligence,
-                calculate a threat score and identify risk factors.
+              <p className="mt-3 text-sm text-slate-400">
+                Correlating threat intelligence...
               </p>
 
             </div>
@@ -384,94 +363,77 @@ export default function CorrelationPage() {
           <div className="mt-6 space-y-6">
 
             {/* =================================================
-                RESULT HEADER
+                CORRELATION RESULT
             ================================================== */}
 
-            <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
+            <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
 
-              <div className="flex flex-col justify-between gap-5 md:flex-row md:items-center">
+              <div className="mb-6 flex flex-col justify-between gap-4 md:flex-row md:items-center">
 
-                <div className="flex items-center gap-4">
+                <div>
+                  <h2 className="text-sm font-semibold text-white">
+                    Correlation Result
+                  </h2>
 
-                  <div className="rounded-xl bg-blue-500/10 p-3 text-blue-400">
-                    <Target size={24} />
-                  </div>
-
-                  <div>
-
-                    <p className="text-xs uppercase tracking-wider text-slate-500">
-                      Investigated Indicator
-                    </p>
-
-                    <p className="mt-1 font-mono text-xl font-semibold text-white">
-                      {result.ip}
-                    </p>
-
-                    <p className="mt-1 text-xs text-slate-600">
-                      Analysis #{result.id} •{" "}
-                      {formatDate(result.created_at)}
-                    </p>
-
-                  </div>
-
+                  <p className="mt-1 text-xs text-slate-500">
+                    Combined threat intelligence analysis
+                  </p>
                 </div>
 
                 <div
-                  className={`rounded-lg border px-4 py-2 text-xs font-semibold ${getThreatBadge()}`}
+                  className={`rounded-md border px-3 py-1 text-xs font-semibold ${getThreatBadge()}`}
                 >
-                  {threatLevel} THREAT
+                  {threatLevel}
                 </div>
 
               </div>
 
-            </section>
+              {/* IP + SCORE */}
 
-            {/* =================================================
-                SCORE + SOURCES
-            ================================================== */}
+              <div className="grid gap-4 md:grid-cols-2">
 
-            <div className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+                <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
 
-              {/* THREAT SCORE */}
+                  <div className="flex items-center gap-2">
+                    <Target
+                      size={16}
+                      className="text-blue-400"
+                    />
 
-              <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Indicator
+                    </p>
+                  </div>
 
-                <div className="flex items-start justify-between">
+                  <p className="mt-3 break-all text-xl font-semibold text-white">
+                    {result.ip}
+                  </p>
 
-                  <div>
+                </div>
+
+                <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
+
+                  <div className="flex items-center gap-2">
+                    <TrendingUp
+                      size={16}
+                      className={getScoreColor()}
+                    />
 
                     <p className="text-xs uppercase tracking-wide text-slate-500">
                       Threat Score
                     </p>
-
-                    <div className="mt-3 flex items-end gap-2">
-
-                      <span
-                        className={`text-4xl font-semibold ${getThreatColor()}`}
-                      >
-                        {Number(threatScore).toFixed(2)}
-                      </span>
-
-                      <span className="mb-1 text-sm text-slate-600">
-                        /100
-                      </span>
-
-                    </div>
-
                   </div>
 
-                  <div className="rounded-lg bg-blue-500/10 p-3 text-blue-400">
-                    <TrendingUp size={20} />
-                  </div>
+                  <p
+                    className={`mt-3 text-3xl font-semibold ${getScoreColor()}`}
+                  >
+                    {threatScore}
+                  </p>
 
-                </div>
-
-                <div className="mt-6">
-
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-800">
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
 
                     <div
-                      className="h-full rounded-full bg-blue-500 transition-all"
+                      className={`h-full rounded-full transition-all ${getScoreBarColor()}`}
                       style={{
                         width: `${Math.min(
                           Math.max(threatScore, 0),
@@ -482,281 +444,320 @@ export default function CorrelationPage() {
 
                   </div>
 
-                  <div className="mt-2 flex justify-between text-[10px] text-slate-700">
-                    <span>0</span>
-                    <span>25</span>
-                    <span>50</span>
-                    <span>75</span>
-                    <span>100</span>
-                  </div>
-
                 </div>
 
-              </section>
+              </div>
 
-              {/* ABUSEIPDB */}
+            </section>
 
-              <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
+            {/* =================================================
+                INTELLIGENCE SOURCES
+            ================================================== */}
 
-                <div className="mb-5 flex items-center justify-between">
+            <section>
+
+              <div className="mb-4 flex items-center gap-2">
+
+                <Database
+                  size={17}
+                  className="text-blue-400"
+                />
+
+                <h2 className="text-sm font-semibold text-white">
+                  Intelligence Sources
+                </h2>
+
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+
+                {/* ABUSEIPDB */}
+
+                <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
 
                   <div className="flex items-center gap-3">
 
-                    <div className="rounded-lg bg-orange-500/10 p-2 text-orange-400">
-                      <ShieldAlert size={19} />
-                    </div>
-
-                    <div>
-
-                      <h2 className="text-sm font-semibold text-white">
-                        AbuseIPDB
-                      </h2>
-
-                      <p className="text-xs text-slate-500">
-                        IP abuse reputation
-                      </p>
-
-                    </div>
-
-                  </div>
-
-                  <span className="text-xs text-emerald-400">
-                    Connected
-                  </span>
-
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-
-                  <Metric
-                    label="Confidence"
-                    value={`${result.abuse_confidence_score}%`}
-                  />
-
-                  <Metric
-                    label="Reports"
-                    value={String(result.abuse_total_reports)}
-                  />
-
-                </div>
-
-              </section>
-
-              {/* VIRUSTOTAL */}
-
-              <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
-
-                <div className="mb-5 flex items-center gap-3">
-
-                  <div className="rounded-lg bg-blue-500/10 p-2 text-blue-400">
-                    <Database size={19} />
-                  </div>
-
-                  <div>
-
-                    <h2 className="text-sm font-semibold text-white">
-                      VirusTotal
-                    </h2>
-
-                    <p className="text-xs text-slate-500">
-                      Multi-engine analysis
-                    </p>
-
-                  </div>
-
-                </div>
-
-                <div className="grid grid-cols-3 gap-2">
-
-                  <Metric
-                    label="Malicious"
-                    value={String(result.vt_malicious)}
-                  />
-
-                  <Metric
-                    label="Suspicious"
-                    value={String(result.vt_suspicious)}
-                  />
-
-                  <Metric
-                    label="Harmless"
-                    value={String(result.vt_harmless)}
-                  />
-
-                </div>
-
-              </section>
-
-            </div>
-
-            {/* =================================================
-                RISK FACTORS + SUMMARY
-            ================================================== */}
-
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-
-              {/* RISK FACTORS */}
-
-              <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
-
-                <div className="mb-5 flex items-center gap-3">
-
-                  <div className="rounded-lg bg-yellow-500/10 p-2 text-yellow-400">
-                    <AlertTriangle size={19} />
-                  </div>
-
-                  <div>
-
-                    <h2 className="text-sm font-semibold text-white">
-                      Risk Factors
-                    </h2>
-
-                    <p className="text-xs text-slate-500">
-                      Indicators contributing to the assessment
-                    </p>
-
-                  </div>
-
-                </div>
-
-                {result.risk_factors.length > 0 ? (
-
-                  <div className="space-y-2">
-
-                    {result.risk_factors.map(
-                      (factor, index) => (
-                        <div
-                          key={`${factor}-${index}`}
-                          className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3"
-                        >
-
-                          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-yellow-400" />
-
-                          <span className="text-sm text-slate-400">
-                            {factor}
-                          </span>
-
-                        </div>
-                      )
-                    )}
-
-                  </div>
-
-                ) : (
-
-                  <div className="rounded-lg border border-slate-800 bg-slate-950 p-5 text-center">
-
-                    <ShieldCheck
-                      size={22}
-                      className="mx-auto text-emerald-400"
+                    <ShieldAlert
+                      size={20}
+                      className="text-orange-400"
                     />
 
-                    <p className="mt-3 text-sm text-slate-400">
-                      No significant risk factors identified.
-                    </p>
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        AbuseIPDB
+                      </p>
+
+                      <p className="text-xs text-slate-500">
+                        IP reputation
+                      </p>
+                    </div>
 
                   </div>
 
-                )}
+                  <div className="mt-5 grid grid-cols-2 gap-3">
 
-              </section>
+                    <div className="rounded-lg border border-slate-800 p-3">
+                      <p className="text-xs text-slate-500">
+                        Confidence
+                      </p>
 
-              {/* SECURITY ASSESSMENT */}
+                      <p className="mt-1 text-lg font-semibold text-white">
+                        {result.abuse_confidence_score}%
+                      </p>
+                    </div>
 
-              <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-6">
+                    <div className="rounded-lg border border-slate-800 p-3">
+                      <p className="text-xs text-slate-500">
+                        Reports
+                      </p>
 
-                <div className="mb-5 flex items-center gap-3">
+                      <p className="mt-1 text-lg font-semibold text-white">
+                        {result.abuse_total_reports}
+                      </p>
+                    </div>
 
-                  <div className="rounded-lg bg-emerald-500/10 p-2 text-emerald-400">
-                    <ShieldCheck size={19} />
                   </div>
 
-                  <div>
+                </div>
 
-                    <h2 className="text-sm font-semibold text-white">
-                      Security Assessment
-                    </h2>
+                {/* VIRUSTOTAL */}
+
+                <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
+
+                  <div className="flex items-center gap-3">
+
+                    <ShieldCheck
+                      size={20}
+                      className="text-emerald-400"
+                    />
+
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        VirusTotal
+                      </p>
+
+                      <p className="text-xs text-slate-500">
+                        Multi-engine detection
+                      </p>
+                    </div>
+
+                  </div>
+
+                  <div className="mt-5 grid grid-cols-3 gap-2">
+
+                    <div className="rounded-lg border border-red-900/30 bg-red-950/20 p-3 text-center">
+                      <p className="text-xs text-slate-500">
+                        Malicious
+                      </p>
+
+                      <p className="mt-1 text-lg font-semibold text-red-400">
+                        {result.vt_malicious}
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg border border-yellow-900/30 bg-yellow-950/20 p-3 text-center">
+                      <p className="text-xs text-slate-500">
+                        Suspicious
+                      </p>
+
+                      <p className="mt-1 text-lg font-semibold text-yellow-400">
+                        {result.vt_suspicious}
+                      </p>
+                    </div>
+
+                    <div className="rounded-lg border border-emerald-900/30 bg-emerald-950/20 p-3 text-center">
+                      <p className="text-xs text-slate-500">
+                        Harmless
+                      </p>
+
+                      <p className="mt-1 text-lg font-semibold text-emerald-400">
+                        {result.vt_harmless}
+                      </p>
+                    </div>
+
+                  </div>
+
+                </div>
+
+                {/* ANALYSIS */}
+
+                <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
+
+                  <div className="flex items-center gap-3">
+
+                    <Activity
+                      size={20}
+                      className={getThreatColor()}
+                    />
+
+                    <div>
+                      <p className="text-sm font-semibold text-white">
+                        Correlation Engine
+                      </p>
+
+                      <p className="text-xs text-slate-500">
+                        Combined assessment
+                      </p>
+                    </div>
+
+                  </div>
+
+                  <div className="mt-5">
 
                     <p className="text-xs text-slate-500">
-                      Unified threat intelligence summary
-                    </p>
-
-                  </div>
-
-                </div>
-
-                <div className="rounded-lg border border-slate-800 bg-slate-950 p-5">
-
-                  <p className="text-sm leading-6 text-slate-400">
-                    {result.summary}
-                  </p>
-
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-3">
-
-                  <div className="rounded-lg border border-slate-800 bg-slate-950 p-4">
-
-                    <p className="text-xs text-slate-600">
                       Threat Level
                     </p>
 
                     <p
-                      className={`mt-2 text-sm font-semibold ${getThreatColor()}`}
+                      className={`mt-1 text-lg font-semibold ${getThreatColor()}`}
                     >
                       {threatLevel}
                     </p>
 
                   </div>
 
-                  <div className="rounded-lg border border-slate-800 bg-slate-950 p-4">
+                </div>
 
-                    <p className="text-xs text-slate-600">
-                      Sources
+              </div>
+
+            </section>
+
+            {/* =================================================
+                RISK FACTORS
+            ================================================== */}
+
+            <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
+
+              <div className="mb-5 flex items-center gap-2">
+
+                <AlertTriangle
+                  size={18}
+                  className="text-yellow-400"
+                />
+
+                <h2 className="text-sm font-semibold text-white">
+                  Risk Factors
+                </h2>
+
+              </div>
+
+              {result.risk_factors.length > 0 ? (
+                <div className="space-y-2">
+
+                  {result.risk_factors.map(
+                    (factor, index) => (
+                      <div
+                        key={`${factor}-${index}`}
+                        className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-950 px-4 py-3"
+                      >
+                        <span className="mt-0.5 text-xs font-semibold text-yellow-400">
+                          {index + 1}
+                        </span>
+
+                        <p className="text-sm text-slate-300">
+                          {factor}
+                        </p>
+
+                      </div>
+                    )
+                  )}
+
+                </div>
+              ) : (
+                <div className="rounded-lg border border-slate-800 bg-slate-950 px-4 py-4">
+
+                  <p className="text-sm text-slate-500">
+                    No significant risk factors were identified.
+                  </p>
+
+                </div>
+              )}
+
+            </section>
+
+            {/* =================================================
+                ANALYSIS SUMMARY
+            ================================================== */}
+
+            <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-6">
+
+              <div className="mb-4 flex items-center gap-2">
+
+                <ShieldCheck
+                  size={18}
+                  className="text-blue-400"
+                />
+
+                <h2 className="text-sm font-semibold text-white">
+                  Analyst Summary
+                </h2>
+
+              </div>
+
+              <p className="text-sm leading-7 text-slate-300">
+                {result.summary}
+              </p>
+
+            </section>
+
+            {/* =================================================
+                ANALYSIS METADATA
+            ================================================== */}
+
+            <section className="grid gap-4 md:grid-cols-2">
+
+              <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
+
+                <div className="flex items-center gap-3">
+
+                  <Database
+                    size={18}
+                    className="text-slate-500"
+                  />
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Analysis ID
                     </p>
 
-                    <p className="mt-2 text-sm font-semibold text-white">
-                      2
+                    <p className="mt-1 text-sm font-medium text-white">
+                      #{result.id}
                     </p>
-
                   </div>
 
                 </div>
 
-              </section>
+              </div>
 
-            </div>
+              <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
+
+                <div className="flex items-center gap-3">
+
+                  <Activity
+                    size={18}
+                    className="text-slate-500"
+                  />
+
+                  <div>
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Analyzed At
+                    </p>
+
+                    <p className="mt-1 text-sm font-medium text-white">
+                      {formatDate(result.created_at)}
+                    </p>
+                  </div>
+
+                </div>
+
+              </div>
+
+            </section>
 
           </div>
         )}
 
       </div>
     </main>
-  );
-}
-
-/* =========================================================
-   METRIC COMPONENT
-========================================================= */
-
-function Metric({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="rounded-lg border border-slate-800 bg-slate-950 p-4">
-
-      <p className="truncate text-[11px] uppercase tracking-wide text-slate-600">
-        {label}
-      </p>
-
-      <p className="mt-2 text-xl font-semibold text-white">
-        {value}
-      </p>
-
-    </div>
   );
 }
