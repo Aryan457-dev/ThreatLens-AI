@@ -17,13 +17,8 @@ def get_current_user(
 ):
     token = credentials.credentials
 
-    # -----------------------------------------------------
-    # Decode JWT
-    # -----------------------------------------------------
-
     try:
         payload = decode_access_token(token)
-
     except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -32,10 +27,6 @@ def get_current_user(
                 "WWW-Authenticate": "Bearer"
             },
         )
-
-    # -----------------------------------------------------
-    # Get user ID
-    # -----------------------------------------------------
 
     user_id = payload.get("sub")
 
@@ -50,7 +41,6 @@ def get_current_user(
 
     try:
         user_id = int(user_id)
-
     except (TypeError, ValueError):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -59,10 +49,6 @@ def get_current_user(
                 "WWW-Authenticate": "Bearer"
             },
         )
-
-    # -----------------------------------------------------
-    # Get user from database
-    # -----------------------------------------------------
 
     user = UserRepository.get_by_id(
         db=db,
@@ -78,10 +64,6 @@ def get_current_user(
             },
         )
 
-    # -----------------------------------------------------
-    # Check account status
-    # -----------------------------------------------------
-
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -89,3 +71,68 @@ def get_current_user(
         )
 
     return user
+
+
+def require_role(*allowed_roles: str):
+    def role_checker(
+        current_user=Depends(get_current_user),
+    ):
+        user_role = current_user.role.lower()
+
+        normalized_roles = {
+            role.lower()
+            for role in allowed_roles
+        }
+
+        if user_role not in normalized_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions.",
+            )
+
+        return current_user
+
+    return role_checker
+
+
+def require_admin(
+    current_user=Depends(get_current_user),
+):
+    if current_user.role.lower() != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access required.",
+        )
+
+    return current_user
+
+
+def require_analyst(
+    current_user=Depends(get_current_user),
+):
+    if current_user.role.lower() not in {
+        "admin",
+        "analyst",
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Analyst access required.",
+        )
+
+    return current_user
+
+
+def require_viewer(
+    current_user=Depends(get_current_user),
+):
+    if current_user.role.lower() not in {
+        "admin",
+        "analyst",
+        "viewer",
+    }:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Authenticated user access required.",
+        )
+
+    return current_user

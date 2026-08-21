@@ -5,6 +5,10 @@ from app.models.user import User
 
 class UserRepository:
 
+    # =========================================================
+    # GET USER BY ID
+    # =========================================================
+
     @staticmethod
     def get_by_id(
         db: Session,
@@ -15,6 +19,11 @@ class UserRepository:
             .filter(User.id == user_id)
             .first()
         )
+
+
+    # =========================================================
+    # GET USER BY USERNAME
+    # =========================================================
 
     @staticmethod
     def get_by_username(
@@ -27,6 +36,11 @@ class UserRepository:
             .first()
         )
 
+
+    # =========================================================
+    # GET USER BY EMAIL
+    # =========================================================
+
     @staticmethod
     def get_by_email(
         db: Session,
@@ -37,6 +51,30 @@ class UserRepository:
             .filter(User.email == email)
             .first()
         )
+
+
+    # =========================================================
+    # GET ALL USERS
+    # =========================================================
+
+    @staticmethod
+    def get_all(
+        db: Session,
+        limit: int = 50,
+        offset: int = 0
+    ):
+        return (
+            db.query(User)
+            .order_by(User.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+
+
+    # =========================================================
+    # CREATE USER
+    # =========================================================
 
     @staticmethod
     def create(
@@ -56,6 +94,44 @@ class UserRepository:
         )
 
         db.add(user)
+        db.commit()
+        db.refresh(user)
+
+        return user
+
+
+    # =========================================================
+    # UPDATE USER ROLE
+    # =========================================================
+
+    @staticmethod
+    def update_role(
+        db: Session,
+        user: User,
+        role: str
+    ):
+
+        user.role = role
+
+        db.commit()
+        db.refresh(user)
+
+        return user
+
+
+    # =========================================================
+    # UPDATE USER STATUS
+    # =========================================================
+
+    @staticmethod
+    def update_status(
+        db: Session,
+        user: User,
+        is_active: bool
+    ):
+
+        user.is_active = is_active
+
         db.commit()
         db.refresh(user)
 
